@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Отпуск в Турции — Июнь 2026</title>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f7; color: #1d1d1f; padding: 32px; }
+  .container { max-width: 1400px; margin: 0 auto; }
+  h1 { font-size: 28px; margin-bottom: 8px; }
+  .subtitle { color: #86868b; font-size: 15px; margin-bottom: 24px; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 20px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all .2s; }
+  .btn-primary { background: #0071e3; color: #fff; }
+  .btn-primary:hover { background: #0077ED; }
+  .toolbar { display: flex; gap: 12px; margin-bottom: 24px; align-items: center; flex-wrap: wrap; }
+  .card { background: #fff; border-radius: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.08); overflow: hidden; margin-bottom: 24px; }
+  .card-header { padding: 16px 24px; border-bottom: 1px solid #f0f0f0; font-weight: 600; font-size: 16px; display: flex; align-items: center; gap: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th { background: #fafafa; padding: 10px 12px; text-align: left; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: #86868b; border-bottom: 2px solid #e5e5e5; white-space: nowrap; }
+  tbody td { padding: 12px 12px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: #fafbff; }
+  .type-flight { border-left: 4px solid #0071e3; }
+  .type-hotel { border-left: 4px solid #34c759; }
+  .type-transfer { border-left: 4px solid #ff9500; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+  .badge-flight { background: #e8f1fd; color: #0071e3; }
+  .badge-hotel { background: #e8f8ed; color: #34c759; }
+  .badge-transfer { background: #fff3e0; color: #ff9500; }
+  .price { font-weight: 700; font-size: 14px; white-space: nowrap; }
+  .time-block { font-family: 'SF Mono', Menlo, monospace; font-size: 13px; font-weight: 600; }
+  .note { font-size: 12px; color: #86868b; margin-top: 4px; }
+  .link { color: #0071e3; text-decoration: none; font-size: 12px; }
+  .link:hover { text-decoration: underline; }
+  .ta-rating { display: inline-flex; align-items: center; gap: 4px; background: #f0fdf0; border: 1px solid #d4edda; border-radius: 6px; padding: 3px 8px; font-size: 12px; font-weight: 600; color: #1a7f37; text-decoration: none; transition: all .15s; }
+  .ta-rating:hover { background: #d4edda; border-color: #1a7f37; }
+  .ta-reviews { font-size: 11px; color: #86868b; font-weight: 400; }
+  .ok { color: #34c759; }
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; padding: 20px 24px; }
+  .summary-item { text-align: center; }
+  .summary-value { font-size: 24px; font-weight: 700; }
+  .summary-label { font-size: 13px; color: #86868b; margin-top: 4px; }
+  .notes-list { padding: 16px 24px; }
+  .notes-list li { margin-bottom: 8px; font-size: 13px; line-height: 1.5; }
+  .warn { color: #ff3b30; }
+  .updated { font-size: 12px; color: #86868b; margin-top: 16px; text-align: center; }
+  @media (max-width: 1000px) { body { padding: 16px; } table { font-size: 12px; } thead th, tbody td { padding: 8px 6px; } }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Отпуск в Турции</h1>
+  <p class="subtitle">20 &mdash; 29 июня 2026 &middot; на двоих &middot; Стамбул &rarr; Каппадокия &rarr; Фетхие</p>
+
+  <div class="toolbar">
+    <button class="btn btn-primary" onclick="downloadXLSX()">
+      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+      Скачать XLSX
+    </button>
+    <button class="btn btn-primary" style="background:#e44" onclick="downloadPDF()">
+      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      Скачать PDF
+    </button>
+  </div>
+
+  <div class="card">
+    <div class="card-header">Полный маршрут</div>
+    <div style="overflow-x:auto;">
+    <table id="tripTable">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Тип</th>
+          <th>Дата</th>
+          <th>Описание</th>
+          <th>Время / Заезд-Выезд</th>
+          <th>Детали</th>
+          <th>Рейтинг</th>
+          <th>Цена (2 чел.)</th>
+          <th>Ссылки</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- 1. Flight MOW-IST -->
+        <tr class="type-flight">
+          <td>1</td>
+          <td><span class="badge badge-flight">Перелёт</span></td>
+          <td>20.06<br><span class="note">суббота</span></td>
+          <td><strong>Москва &rarr; Стамбул</strong><br>SVO &rarr; IST</td>
+          <td class="time-block">07:20 &rarr; 12:20<br><span class="note">6ч в пути</span></td>
+          <td>Аэрофлот, прямой<br><span class="note">Ручная кладь 10 кг &times; 2<br>Багаж 23 кг &times; 2 <span class="ok">включён</span><br>Обмен платный<br>Возврат платный</span></td>
+          <td>&mdash;</td>
+          <td class="price">48 991 &#8381;</td>
+          <td><a class="link" href="https://avs.io/lsP4" target="_blank">aviasales</a></td>
+        </tr>
+
+        <!-- 2. Hotel Istanbul -->
+        <tr class="type-hotel">
+          <td>2</td>
+          <td><span class="badge badge-hotel">Отель</span></td>
+          <td>20 &mdash; 22.06<br><span class="note">2 ночи</span></td>
+          <td><strong>Adelmar Hotel Istanbul 4*</strong><br>Sisli, Стамбул</td>
+          <td>Check-in: после 14:00<br>Check-out: до 12:00</td>
+          <td>Standard Double Room<br>with city view<br><span class="note">Завтрак включён<br>При отмене не возвращается</span></td>
+          <td>
+            <a class="ta-rating" href="https://www.tripadvisor.com/Hotel_Review-g293974-d12289910-Reviews-Adelmar_Hotel_Istanbul_Sisli-Istanbul.html" target="_blank">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="#00aa6c"><circle cx="12" cy="12" r="10"/><path d="M12 6a6 6 0 100 12 6 6 0 000-12zm0 2a4 4 0 110 8 4 4 0 010-8z" fill="#fff"/></svg>
+              4.0
+            </a>
+            <br><span class="ta-reviews">132 отзыва</span>
+            <br><span class="note">Ostrovok: 8.4/10</span>
+          </td>
+          <td class="price">13 992 &#8381;</td>
+          <td>
+            <a class="link" href="https://corp.ostrovok.ru/hotel/turkey/istanbul/mid8668983/adelmar_hotel_istanbul/?q=1639&dates=20.06.2026-22.06.2026&guests=2&residency=en-ru&price=one&sid=REDACTED" target="_blank">ostrovok</a><br>
+            <a class="link" href="https://www.tripadvisor.com/Hotel_Review-g293974-d12289910-Reviews-Adelmar_Hotel_Istanbul_Sisli-Istanbul.html" target="_blank">tripadvisor</a>
+          </td>
+        </tr>
+
+        <!-- 3. Flight IST-NAV -->
+        <tr class="type-flight">
+          <td>3</td>
+          <td><span class="badge badge-flight">Перелёт</span></td>
+          <td>22.06</td>
+          <td><strong>Стамбул &rarr; Невшехир</strong><br>IST &rarr; NAV</td>
+          <td class="time-block">20:45 &rarr; 22:05<br><span class="note">1ч 20м в пути</span></td>
+          <td>Turkish Airlines, прямой<br><span class="note">Ручная кладь 8 кг &times; 2<br>Багаж 15 кг &times; 2 <span class="ok">включён</span><br>Без возврата</span></td>
+          <td>&mdash;</td>
+          <td class="price">18 727 &#8381;</td>
+          <td><a class="link" href="https://avs.io/lruq" target="_blank">aviasales</a></td>
+        </tr>
+
+        <!-- 4. Transfer NAV-Goreme -->
+        <tr class="type-transfer">
+          <td>4</td>
+          <td><span class="badge badge-transfer">Трансфер</span></td>
+          <td>22.06</td>
+          <td><strong>Невшехир &rarr; Гёреме</strong></td>
+          <td class="time-block">~22:30 &rarr; ~22:50<br><span class="note">~20 мин</span></td>
+          <td><span class="note">Такси / трансфер от аэропорта</span></td>
+          <td>&mdash;</td>
+          <td class="price">&mdash;</td>
+          <td></td>
+        </tr>
+
+        <!-- 5. Hotel Cappadocia -->
+        <tr class="type-hotel">
+          <td>5</td>
+          <td><span class="badge badge-hotel">Отель</span></td>
+          <td>22 &mdash; 25.06<br><span class="note">3 ночи</span></td>
+          <td><strong>Cappadocia Cave Suites 5*</strong><br>Adult Only +12, Гёреме</td>
+          <td>Check-in: после 14:00<br><span class="note">(поздний заезд ~23:00,<br>ресепшн 24/7)</span><br>Check-out: до 11:00</td>
+          <td>Standard Double Room<br>(1 Queen Bed)<br><span class="note">Завтрак включён<br>Бесплатная отмена до 06.06<br>20 м², собств. ванная</span></td>
+          <td>
+            <a class="ta-rating" href="https://www.tripadvisor.com/Hotel_Review-g297983-d298393-Reviews-Cappadocia_Cave_Suites-Goreme_Cappadocia.html" target="_blank">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="#00aa6c"><circle cx="12" cy="12" r="10"/><path d="M12 6a6 6 0 100 12 6 6 0 000-12zm0 2a4 4 0 110 8 4 4 0 010-8z" fill="#fff"/></svg>
+              4.5
+            </a>
+            <br><span class="ta-reviews">1 348 отзывов</span>
+            <br><span class="note">Ostrovok: 9.2/10</span>
+          </td>
+          <td class="price">64 138 &#8381;</td>
+          <td>
+            <a class="link" href="https://corp.ostrovok.ru/hotel/turkey/goreme/mid7475285/cappadocia_cave_suites/?q=602183&dates=22.06.2026-25.06.2026&guests=2&residency=en-ru&lc=22&page=1&price=one&sid=REDACTED" target="_blank">ostrovok</a><br>
+            <a class="link" href="https://www.tripadvisor.com/Hotel_Review-g297983-d298393-Reviews-Cappadocia_Cave_Suites-Goreme_Cappadocia.html" target="_blank">tripadvisor</a>
+          </td>
+        </tr>
+
+        <!-- 6. Flight NAV-DLM -->
+        <tr class="type-flight">
+          <td>6</td>
+          <td><span class="badge badge-flight">Перелёт</span></td>
+          <td>25.06</td>
+          <td><strong>Невшехир &rarr; Даламан</strong><br>NAV &rarr; IST &rarr; DLM</td>
+          <td class="time-block">15:50 &rarr; 20:05<br><span class="note">4ч 15м в пути</span></td>
+          <td>Turkish Airlines, 1 пересадка<br><span class="note">NAV 15:50 &rarr; IST 17:25<br>Пересадка 1ч 20м<br>IST 18:45 &rarr; DLM 20:05<br>Ручная кладь 8 кг &times; 2<br>Багаж 15 кг &times; 2 <span class="ok">включён</span><br>Без возврата</span></td>
+          <td>&mdash;</td>
+          <td class="price">24 946 &#8381;</td>
+          <td><a class="link" href="https://avs.io/lrUa" target="_blank">aviasales</a></td>
+        </tr>
+
+        <!-- 7. Transfer DLM-Fethiye -->
+        <tr class="type-transfer">
+          <td>7</td>
+          <td><span class="badge badge-transfer">Трансфер</span></td>
+          <td>25.06</td>
+          <td><strong>Даламан &rarr; Фетхие</strong></td>
+          <td class="time-block">~20:30 &rarr; ~22:00<br><span class="note">~1ч &mdash; 1ч 30м</span></td>
+          <td><span class="note">Такси / трансфер от аэропорта</span></td>
+          <td>&mdash;</td>
+          <td class="price">&mdash;</td>
+          <td></td>
+        </tr>
+
+        <!-- 8. Hotel Fethiye -->
+        <tr class="type-hotel">
+          <td>8</td>
+          <td><span class="badge badge-hotel">Отель</span></td>
+          <td>25 &mdash; 28.06<br><span class="note">3 ночи</span></td>
+          <td><strong>Jiva Beach Resort 5*</strong><br>All Inclusive, Фетхие</td>
+          <td>Check-in: после 14:00<br>Check-out: до 12:00</td>
+          <td>Room Pool View<br><span class="note">Всё включено<br>Бесплатная отмена до 23.06<br>Для некурящих</span></td>
+          <td>
+            <a class="ta-rating" href="https://www.tripadvisor.com/Hotel_Review-g298031-d3337425-Reviews-Jiva_Beach_Resort-Fethiye_Mugla_Province_Turkish_Aegean_Coast.html" target="_blank">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="#00aa6c"><circle cx="12" cy="12" r="10"/><path d="M12 6a6 6 0 100 12 6 6 0 000-12zm0 2a4 4 0 110 8 4 4 0 010-8z" fill="#fff"/></svg>
+              4.5
+            </a>
+            <br><span class="ta-reviews">5 814 отзывов</span>
+            <br><span class="note">Ostrovok: 9.4/10</span>
+          </td>
+          <td class="price">84 162 &#8381;</td>
+          <td>
+            <a class="link" href="https://corp.ostrovok.ru/hotel/turkey/fethiye/mid8580217/jiva_beach_resort/?q=4532&dates=25.06.2026-28.06.2026&guests=2&residency=en-ru&price=one&room=s-5acf06a7-b72a-57c4-a42e-ffd2646c896a&serp_price=jiva_beach_resort.69929.RUB.sr-019d7b8f-d625-7c1d-9d45-4e798c1fd180&sid=REDACTED" target="_blank">ostrovok</a><br>
+            <a class="link" href="https://www.tripadvisor.com/Hotel_Review-g298031-d3337425-Reviews-Jiva_Beach_Resort-Fethiye_Mugla_Province_Turkish_Aegean_Coast.html" target="_blank">tripadvisor</a>
+          </td>
+        </tr>
+
+        <!-- 9. Transfer Fethiye-DLM -->
+        <tr class="type-transfer">
+          <td>9</td>
+          <td><span class="badge badge-transfer">Трансфер</span></td>
+          <td>28.06</td>
+          <td><strong>Фетхие &rarr; Даламан</strong></td>
+          <td class="time-block">~18:00 &rarr; ~19:00<br><span class="note">~1ч &mdash; 1ч 30м</span></td>
+          <td><span class="note">Выезд за ~2ч до рейса</span></td>
+          <td>&mdash;</td>
+          <td class="price">&mdash;</td>
+          <td></td>
+        </tr>
+
+        <!-- 10. Flight DLM-VKO -->
+        <tr class="type-flight">
+          <td>10</td>
+          <td><span class="badge badge-flight">Перелёт</span></td>
+          <td>28.06 &rarr; 29.06</td>
+          <td><strong>Даламан &rarr; Москва</strong><br>DLM &rarr; VKO</td>
+          <td class="time-block">20:00 &rarr; 00:35<br><span class="note">4ч 35м в пути<br>прилёт 29.06</span></td>
+          <td>Turkish Airlines, прямой<br><span class="note">Ручная кладь 8 кг &times; 2<br>Багаж 23 кг &times; 1 <span class="ok">включён</span><br>Без возврата</span></td>
+          <td>&mdash;</td>
+          <td class="price">61 091 &#8381;</td>
+          <td><a class="link" href="https://avs.io/ls3L" target="_blank">aviasales</a></td>
+        </tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <!-- SUMMARY -->
+  <div class="card">
+    <div class="card-header">Итого</div>
+    <div class="summary-grid">
+      <div class="summary-item">
+        <div class="summary-value">~316 047 &#8381;</div>
+        <div class="summary-label">Общая стоимость (на двоих)</div>
+      </div>
+      <div class="summary-item">
+        <div class="summary-value">153 755 &#8381;</div>
+        <div class="summary-label">Перелёты (4 рейса, все с багажом)</div>
+      </div>
+      <div class="summary-item">
+        <div class="summary-value">162 292 &#8381;</div>
+        <div class="summary-label">Отели (8 ночей)</div>
+      </div>
+      <div class="summary-item">
+        <div class="summary-value">10 дней</div>
+        <div class="summary-label">20.06 &mdash; 29.06</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- NOTES -->
+  <div class="card">
+    <div class="card-header">Примечания</div>
+    <ul class="notes-list">
+      <li><span class="ok">Все рейсы с багажом.</span> MOW&rarr;IST: 23 кг &times; 2, IST&rarr;NAV: 15 кг &times; 2, NAV&rarr;DLM: 15 кг &times; 2, DLM&rarr;VKO: 23 кг &times; 1.</li>
+      <li>Рейс DLM &rarr; VKO включает только <strong>1 место багажа</strong> (23 кг) на двоих. Если нужен второй чемодан &mdash; докупить отдельно.</li>
+      <li>Прилёт в Стамбул 12:20 &mdash; check-in в Adelmar после 14:00 &mdash; <span class="ok">стыкуется</span> (подождать ~1.5ч или оставить багаж).</li>
+      <li>2 полных дня в Стамбуле (20&ndash;22.06) перед вылетом в Каппадокию.</li>
+      <li>Все цены указаны <strong>на двоих</strong> и актуальны на момент проверки (11.04.2026). При бронировании могут отличаться.</li>
+      <li>Трансферы (Невшехир &rarr; Гёреме, Даламан &harr; Фетхие) не включены в стоимость &mdash; нужно организовать отдельно.</li>
+      <li>Cappadocia Cave Suites &mdash; отель <strong>Adult Only (+12)</strong>, ресепшн работает круглосуточно (поздний заезд возможен).</li>
+    </ul>
+  </div>
+
+  <p class="updated">Обновлено: 11 апреля 2026</p>
+</div>
+
+<script>
+function downloadXLSX() {
+  const data = [
+    ['#', 'Тип', 'Дата', 'Описание', 'Маршрут', 'Время', 'В пути', 'Оператор', 'Номер / Класс', 'Питание', 'Условия отмены', 'Багаж', 'Цена (2 чел.), \u20BD', 'TripAdvisor', 'Отзывов', 'Ostrovok', 'Ссылка бронирования', 'Ссылка TripAdvisor'],
+    [1, 'Перелёт', '20.06 (сб)', 'Москва \u2192 Стамбул', 'SVO \u2192 IST', '07:20 \u2192 12:20', '6ч', 'Аэрофлот', 'Прямой', '\u2014', 'Обмен/возврат платный', 'Ручная кладь 10 кг \u00d7 2, багаж 23 кг \u00d7 2', 48991, '', '', '', 'https://avs.io/lsP4', ''],
+    [2, 'Отель', '20\u201422.06 (2 ночи)', 'Adelmar Hotel Istanbul 4*', 'Sisli, Стамбул', 'CI после 14:00 / CO до 12:00', '\u2014', 'Adelmar Hotel Istanbul', 'Std Dbl Room city view', 'Завтрак', 'Невозвратный', '\u2014', 13992, '4.0/5', 132, '8.4/10', 'https://corp.ostrovok.ru/hotel/turkey/istanbul/mid8668983/adelmar_hotel_istanbul/', 'https://www.tripadvisor.com/Hotel_Review-g293974-d12289910-Reviews-Adelmar_Hotel_Istanbul_Sisli-Istanbul.html'],
+    [3, 'Перелёт', '22.06', 'Стамбул \u2192 Невшехир', 'IST \u2192 NAV', '20:45 \u2192 22:05', '1ч 20м', 'Turkish Airlines', 'Прямой', '\u2014', 'Без возврата', 'Ручная кладь 8 кг \u00d7 2, багаж 15 кг \u00d7 2', 18727, '', '', '', 'https://avs.io/lruq', ''],
+    [4, 'Трансфер', '22.06', 'Невшехир \u2192 Гёреме', 'NAV \u2192 Гёреме', '~22:30 \u2192 ~22:50', '~20м', '\u2014', 'Такси', '\u2014', '\u2014', '\u2014', '', '', '', '', '', ''],
+    [5, 'Отель', '22\u201425.06 (3 ночи)', 'Cappadocia Cave Suites 5*', 'Гёреме', 'CI после 14:00 / CO до 11:00', '\u2014', 'Cave Suites Adult Only +12', 'Std Dbl Room (1 Queen), 20 м\u00b2', 'Завтрак', 'Бесп. отмена до 06.06', '\u2014', 64138, '4.5/5', 1348, '9.2/10', 'https://corp.ostrovok.ru/hotel/turkey/goreme/mid7475285/cappadocia_cave_suites/', 'https://www.tripadvisor.com/Hotel_Review-g297983-d298393-Reviews-Cappadocia_Cave_Suites-Goreme_Cappadocia.html'],
+    [6, 'Перелёт', '25.06', 'Невшехир \u2192 Даламан', 'NAV \u2192 IST \u2192 DLM', '15:50 \u2192 20:05', '4ч 15м', 'Turkish Airlines', '1 пересадка (IST)', '\u2014', 'Без возврата', 'Ручная кладь 8 кг \u00d7 2, багаж 15 кг \u00d7 2', 24946, '', '', '', 'https://avs.io/lrUa', ''],
+    [7, 'Трансфер', '25.06', 'Даламан \u2192 Фетхие', 'DLM \u2192 Фетхие', '~20:30 \u2192 ~22:00', '~1\u20141.5ч', '\u2014', 'Такси / трансфер', '\u2014', '\u2014', '\u2014', '', '', '', '', '', ''],
+    [8, 'Отель', '25\u201428.06 (3 ночи)', 'Jiva Beach Resort 5* AI', 'Фетхие', 'CI после 14:00 / CO до 12:00', '\u2014', 'Jiva Beach Resort', 'Room Pool View', 'All Inclusive', 'Бесп. отмена до 23.06', '\u2014', 84162, '4.5/5', 5814, '9.4/10', 'https://corp.ostrovok.ru/hotel/turkey/fethiye/mid8580217/jiva_beach_resort/', 'https://www.tripadvisor.com/Hotel_Review-g298031-d3337425-Reviews-Jiva_Beach_Resort-Fethiye_Mugla_Province_Turkish_Aegean_Coast.html'],
+    [9, 'Трансфер', '28.06', 'Фетхие \u2192 Даламан', 'Фетхие \u2192 DLM', '~18:00 \u2192 ~19:00', '~1\u20141.5ч', '\u2014', 'Такси / трансфер', '\u2014', '\u2014', '\u2014', '', '', '', '', '', ''],
+    [10, 'Перелёт', '28\u219229.06', 'Даламан \u2192 Москва', 'DLM \u2192 VKO', '20:00 \u2192 00:35 (+1)', '4ч 35м', 'Turkish Airlines', 'Прямой', '\u2014', 'Без возврата', 'Ручная кладь 8 кг \u00d7 2, багаж 23 кг \u00d7 1', 61091, '', '', '', 'https://avs.io/ls3L', ''],
+    [],
+    ['', '', '', '', '', '', '', '', '', '', '', 'ИТОГО перелёты:', 153755, '', '', '', '', ''],
+    ['', '', '', '', '', '', '', '', '', '', '', 'ИТОГО отели:', 162292, '', '', '', '', ''],
+    ['', '', '', '', '', '', '', '', '', '', '', 'ИТОГО:', 316047, '', '', '', '', ''],
+  ];
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  ws['!cols'] = [
+    {wch:4},{wch:10},{wch:22},{wch:28},{wch:22},{wch:30},{wch:10},{wch:28},{wch:30},{wch:14},{wch:22},{wch:38},{wch:16},{wch:8},{wch:10},{wch:10},{wch:55},{wch:70}
+  ];
+  XLSX.utils.book_append_sheet(wb, ws, 'Маршрут');
+  XLSX.writeFile(wb, 'Turkey_Trip_June_2026.xlsx');
+}
+
+function downloadPDF() {
+  const w = window.open('', '_blank');
+  w.document.write(`<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Турция 20-29 июня 2026</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1d1d1f;padding:20px;max-width:420px;margin:0 auto;background:#fff}
+h1{font-size:22px;margin-bottom:4px}
+.sub{color:#86868b;font-size:13px;margin-bottom:16px;border-bottom:2px solid #e5e5e5;padding-bottom:12px}
+.day{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#86868b;margin:16px 0 8px;padding:4px 0;border-bottom:1px solid #eee}
+.item{border-left:4px solid #ccc;padding:8px 12px;margin-bottom:10px;border-radius:0 8px 8px 0;background:#fafafa}
+.item.flight{border-left-color:#0071e3;background:#f0f5ff}
+.item.hotel{border-left-color:#34c759;background:#f0faf2}
+.item.transfer{border-left-color:#ff9500;background:#fffaf0}
+.item-title{font-weight:700;font-size:15px;margin-bottom:2px}
+.item-time{font-family:'SF Mono',Menlo,monospace;font-size:14px;font-weight:600;color:#333}
+.item-details{font-size:12px;color:#555;margin-top:4px;line-height:1.5}
+.item-links{font-size:11px;margin-top:4px}
+.item-links a{color:#0071e3;text-decoration:none;margin-right:8px}
+.item-links a:hover{text-decoration:underline}
+.tag{display:inline-block;font-size:10px;font-weight:600;padding:1px 6px;border-radius:3px;margin-right:4px}
+.tag-flight{background:#dbe8fd;color:#0071e3}
+.tag-hotel{background:#d4f5e0;color:#1a7f37}
+.tag-transfer{background:#fff0d9;color:#c77800}
+.ok{color:#34c759}
+.rating{font-size:12px;color:#1a7f37;font-weight:600}
+.total-card{background:#f5f5f7;border-radius:12px;padding:16px;margin-top:20px;text-align:center}
+.total-value{font-size:26px;font-weight:700}
+.total-label{font-size:12px;color:#86868b;margin-top:2px}
+.total-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+.total-sub{font-size:16px;font-weight:600}
+.notes{margin-top:16px;font-size:11px;color:#666;line-height:1.6}
+.notes li{margin-bottom:4px}
+.footer{text-align:center;font-size:10px;color:#aaa;margin-top:16px}
+@media print{body{padding:12px;max-width:100%}.item{break-inside:avoid}}
+</style></head><body>
+<h1>Турция</h1>
+<p class="sub">20 — 29 июня 2026 · на двоих · Стамбул → Каппадокия → Фетхие</p>
+
+<div class="day">20 июня, суббота</div>
+<div class="item flight">
+  <span class="tag tag-flight">Перелёт</span>
+  <div class="item-title">Москва → Стамбул</div>
+  <div class="item-time">07:20 → 12:20</div>
+  <div class="item-details">Аэрофлот · SVO → IST · 6ч · прямой<br>Багаж 23 кг × 2 <span class="ok">включён</span></div>
+  <div class="item-links"><a href="https://avs.io/lsP4">aviasales</a></div>
+</div>
+
+<div class="item hotel">
+  <span class="tag tag-hotel">Отель</span> <span class="rating">TA 4.0 · Ostrovok 8.4</span>
+  <div class="item-title">Adelmar Hotel Istanbul 4*</div>
+  <div class="item-details">20 — 22.06 · 2 ночи · Sisli<br>Standard Double Room city view<br>Завтрак включён · Невозвратный<br>Check-in после 14:00 · Check-out до 12:00</div>
+  <div class="item-links"><a href="https://corp.ostrovok.ru/hotel/turkey/istanbul/mid8668983/adelmar_hotel_istanbul/">ostrovok</a><a href="https://www.tripadvisor.com/Hotel_Review-g293974-d12289910-Reviews-Adelmar_Hotel_Istanbul_Sisli-Istanbul.html">tripadvisor</a></div>
+</div>
+
+<div class="day">22 июня, понедельник</div>
+<div class="item flight">
+  <span class="tag tag-flight">Перелёт</span>
+  <div class="item-title">Стамбул → Невшехир</div>
+  <div class="item-time">20:45 → 22:05</div>
+  <div class="item-details">Turkish Airlines · IST → NAV · 1ч 20м · прямой<br>Багаж 15 кг × 2 <span class="ok">включён</span></div>
+  <div class="item-links"><a href="https://avs.io/lruq">aviasales</a></div>
+</div>
+
+<div class="item transfer">
+  <span class="tag tag-transfer">Трансфер</span>
+  <div class="item-title">Невшехир → Гёреме</div>
+  <div class="item-time">~22:30 → ~22:50</div>
+  <div class="item-details">Такси · ~20 мин</div>
+</div>
+
+<div class="item hotel">
+  <span class="tag tag-hotel">Отель</span> <span class="rating">TA 4.5 · Ostrovok 9.2</span>
+  <div class="item-title">Cappadocia Cave Suites 5*</div>
+  <div class="item-details">22 — 25.06 · 3 ночи · Гёреме · Adult Only +12<br>Standard Double Room (1 Queen Bed) · 20 м²<br>Завтрак включён · Бесп. отмена до 06.06<br>Check-in после 14:00 (поздний ~23:00, 24/7)<br>Check-out до 11:00</div>
+  <div class="item-links"><a href="https://corp.ostrovok.ru/hotel/turkey/goreme/mid7475285/cappadocia_cave_suites/">ostrovok</a><a href="https://www.tripadvisor.com/Hotel_Review-g297983-d298393-Reviews-Cappadocia_Cave_Suites-Goreme_Cappadocia.html">tripadvisor</a></div>
+</div>
+
+<div class="day">25 июня, четверг</div>
+<div class="item flight">
+  <span class="tag tag-flight">Перелёт</span>
+  <div class="item-title">Невшехир → Даламан</div>
+  <div class="item-time">15:50 → 20:05</div>
+  <div class="item-details">Turkish Airlines · NAV → IST → DLM · 4ч 15м<br>Пересадка IST 1ч 20м<br>Багаж 15 кг × 2 <span class="ok">включён</span></div>
+  <div class="item-links"><a href="https://avs.io/lrUa">aviasales</a></div>
+</div>
+
+<div class="item transfer">
+  <span class="tag tag-transfer">Трансфер</span>
+  <div class="item-title">Даламан → Фетхие</div>
+  <div class="item-time">~20:30 → ~22:00</div>
+  <div class="item-details">Такси / трансфер · ~1 — 1.5ч</div>
+</div>
+
+<div class="item hotel">
+  <span class="tag tag-hotel">Отель</span> <span class="rating">TA 4.5 · Ostrovok 9.4</span>
+  <div class="item-title">Jiva Beach Resort 5* All Inclusive</div>
+  <div class="item-details">25 — 28.06 · 3 ночи · Фетхие<br>Room Pool View · Всё включено<br>Бесп. отмена до 23.06<br>Check-in после 14:00 · Check-out до 12:00</div>
+  <div class="item-links"><a href="https://corp.ostrovok.ru/hotel/turkey/fethiye/mid8580217/jiva_beach_resort/">ostrovok</a><a href="https://www.tripadvisor.com/Hotel_Review-g298031-d3337425-Reviews-Jiva_Beach_Resort-Fethiye_Mugla_Province_Turkish_Aegean_Coast.html">tripadvisor</a></div>
+</div>
+
+<div class="day">28 июня, воскресенье</div>
+<div class="item transfer">
+  <span class="tag tag-transfer">Трансфер</span>
+  <div class="item-title">Фетхие → Даламан</div>
+  <div class="item-time">~18:00 → ~19:00</div>
+  <div class="item-details">Такси / трансфер · ~1 — 1.5ч</div>
+</div>
+
+<div class="item flight">
+  <span class="tag tag-flight">Перелёт</span>
+  <div class="item-title">Даламан → Москва</div>
+  <div class="item-time">20:00 → 00:35 (+1)</div>
+  <div class="item-details">Turkish Airlines · DLM → VKO · 4ч 35м · прямой<br>Багаж 23 кг × 1 <span class="ok">включён</span><br>Прилёт 29.06</div>
+  <div class="item-links"><a href="https://avs.io/ls3L">aviasales</a></div>
+</div>
+
+<ul class="notes">
+  <li>Все рейсы с багажом. DLM→VKO: только 1 место (23 кг) на двоих.</li>
+  <li>Трансферы не включены в стоимость.</li>
+</ul>
+
+<p class="footer">Обновлено: 11 апреля 2026</p>
+
+<script>setTimeout(()=>window.print(),400)<\/script>
+</body></html>`);
+  w.document.close();
+}
+</script>
+</body>
+</html>
