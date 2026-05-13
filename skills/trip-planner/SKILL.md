@@ -1,146 +1,299 @@
 ---
 name: trip-planner
-description: "Extract flight and hotel data from Aviasales and Ostrovok, compile into a polished travel itinerary with XLSX/PDF export. Use this skill whenever the user shares avs.io or aviasales.ru links, corp.ostrovok.ru hotel links, or discusses planning a trip — even if they just paste links without explanation. Also triggers on Russian travel terms: отпуск, поездка, перелёт, отель, бронирование, маршрут. Handles multi-leg itineraries, logistics analysis, price tracking, and TripAdvisor ratings."
+description: "Extract flight and hotel data from Aviasales and Ostrovok, compile into a polished travel itinerary with XLSX/PDF export. Use this skill whenever the user shares avs.io or aviasales.ru links, corp.ostrovok.ru hotel links, or discusses planning a trip — even if they just paste links without explanation. Also triggers on Russian travel terms: отпуск, поездка, перелёт, отель, бронирование, маршрут. Handles multi-leg itineraries, logistics analysis, price tracking, TripAdvisor ratings, hotel search by city when no URL is given, airline-specific filtering (e.g. 'только Oman Air'), and optional Vercel deploy of the resulting HTML."
 ---
 
 # Trip Planner
 
-Build travel itineraries from Aviasales and Ostrovok links. The core job: take raw links, open them in the browser, pull structured data, check logistics, and produce a single HTML file the user can share or print.
+Build travel itineraries from Aviasales and Ostrovok. The job: take raw input (URLs, free-text, or screenshots), open the sites in a real browser, pull structured data, sanity-check logistics, and produce one self-contained HTML file the user can share, print, or deploy.
 
 ## Trigger Contexts
 
-- User pastes `avs.io/*`, `aviasales.ru/*`, or `corp.ostrovok.ru/*` links (even without any text)
-- User describes a trip plan with dates and destinations
-- User asks to compare flight/hotel options or check prices
-- User says "обнови таблицу", "добавь рейс", "поменяй отель", "проверь цены"
-- User shares screenshots from Aviasales or Ostrovok (extract data from the image)
+- User pastes `avs.io/*`, `aviasales.ru/*`, or `corp.ostrovok.ru/*` links (even without text)
+- User describes a trip with dates and destinations
+- User asks to compare options, check prices, swap a hotel, or recompute totals
+- User shares screenshots of Aviasales/Ostrovok
+- User uses Russian travel terms: `отпуск`, `поездка`, `перелёт`, `отель`, `бронирование`, `маршрут`, `обнови таблицу`, `добавь рейс`, `проверь цены`
+
+## Workflow at a glance
+
+```
+Step 0  → Browser readiness check (do NOT skip)
+Step 1  → Parse user input (URLs, text, screenshots)
+Step 2  → Extract flight data (Aviasales, two-phase)
+Step 3  → Extract hotel data (Ostrovok, browser-only)
+Step 4  → Add transfers (see references/transfers.md)
+Step 5  → Run logistics checks
+Step 6  → Generate self-contained HTML (use assets/template.html)
+Step 6.5→ Optional: Python export (XLSX + PDF) via scripts/export_trip.py
+Step 7  → Present results to user
+Step 8  → Optional: deploy to Vercel
+```
+
+Use `mcp__claude-in-chrome__browser_batch` whenever the next 2+ steps are independent navigates/JS-calls. Batched round-trips are ~3–5× faster than sequential.
+
+---
+
+## Step 0: Browser readiness check
+
+Before anything else, call `mcp__claude-in-chrome__tabs_context_mcp` with `createIfEmpty: true`. This serves three purposes:
+
+1. **Verifies the Claude-in-Chrome MCP is alive.** If the call errors, the user's extension is disconnected. Don't loop — tell them once: *"Чтобы продолжить, переподключи расширение Claude in Chrome (значок в правом верхнем углу браузера)."* Then stop and wait.
+2. **Gives you a valid `tabId`** for the rest of the session. Reuse it; never invent IDs.
+3. **Shows you what's already open** so you can avoid opening a 7th tab for a search you already did.
+
+Why this matters: the MCP can disconnect silently during long sessions, and every downstream tool call will fail until reconnected. Catching it at Step 0 saves 20 retries.
+
+---
 
 ## Step 1: Parse Input
 
 Scan the user's message for:
-- **Aviasales short links** (`avs.io/*`) — these 301-redirect to `aviasales.ru/search/*`. The redirect URL itself is gold: `expected_price`, `expected_price_currency`, route code in path (e.g., `MOW2206IST2`), airline code in `t=` param (first 2 chars: `SU`=Aeroflot, `TK`=Turkish Airlines).
-- **Ostrovok hotel links** (`corp.ostrovok.ru/hotel/*`) — dates and guest count are in the URL params.
-- **Dates, destinations, guest count, preferences** mentioned in free text.
-- **Screenshots** — if the user shares Aviasales/Ostrovok screenshots, read the data visually.
+
+- **Aviasales short links** (`avs.io/*`) — 301-redirect to `aviasales.ru/search/*`. The redirect URL itself is signal: `expected_price`, `expected_price_currency`, route code in path (e.g., `MOW2706IST2`), airline code in `t=` param (first 2 chars: `SU`=Aeroflot, `TK`=Turkish, `WY`=Oman Air).
+- **Ostrovok hotel links** (`corp.ostrovok.ru/hotel/*`) — dates and guest count are in URL params.
+- **Dates, cities, guests, airline preferences** in free text.
+- **Screenshots** — if the user shares Aviasales/Ostrovok screenshots, read data visually.
+
+### Aviasales URL constructor (when no link is given)
+
+If the user describes a route in free text ("ищи Москва → Стамбул 27 июня на двоих"), build the search URL yourself:
+
+```
+https://www.aviasales.ru/search/{ORIGIN}{DDMM}{DESTINATION}{N_PAX}
+```
+
+- `ORIGIN`/`DESTINATION` — IATA city or airport code (`MOW`, `LED`, `IST`, `ZNZ`, `JRO`)
+- `DDMM` — departure date, day-month with leading zeros (`2706` for 27 June)
+- `N_PAX` — adult passenger count (`2`)
+
+Examples: `MOW2706IST2`, `IST2906NAV2`, `MOW0309ZNZ2`, `DLM0607MOW2`.
+
+For round-trips Aviasales also accepts `{ORIGIN}{DDMM}{DESTINATION}{DDMM_BACK}{N_PAX}`, but for multi-city use separate one-way searches — it's simpler and the prices line up better.
+
+### Ostrovok hotel search (when no link is given)
+
+If the user names a city without a URL, navigate to:
+
+```
+https://ostrovok.ru/hotel/{country-slug}/{city-slug}/?dates=DD.MM.YYYY-DD.MM.YYYY&guests=N
+```
+
+Examples: `/hotel/turkey/istanbul/`, `/hotel/tanzania/arusha/`, `/hotel/uae/dubai/`. From the result list, extract candidates with `a[href*="/hotel/{country-slug}/"]` and pick by rating + reviews + price (see Hotel search extractor below).
+
+**Island/multi-town destinations** — Ostrovok uses the main town's slug, not the island name. If a tourist label (`santorini`, `mykonos`, `bali`) returns a 404, try the main town slug instead: Santorini → **thira**, Mykonos → **mykonos_town**, Bali → **denpasar** or **ubud**. The page title will confirm you landed on the right city ("Отели в Фире…" for Thira).
+
+---
 
 ## Step 2: Extract Flight Data (Aviasales)
 
-Aviasales is an SPA — `WebFetch` gets only the shell HTML. Two-phase approach:
+Aviasales is an SPA. `WebFetch` only returns shell HTML. Two phases:
 
-**Phase A — Quick data from redirect URL:**
-Use `WebFetch` on the `avs.io` link. It returns a 301 with the full `aviasales.ru` URL. Parse `expected_price` and route info from the URL params. This gives you a price estimate and route even before opening the browser.
+### Phase A — Quick data from redirect URL
 
-**Phase B — Full data from browser:**
-1. Open the link with `mcp__claude-in-chrome__navigate`. Wait 2 seconds.
-2. The shared link usually auto-opens a ticket detail popup. Run the flight JS extractor (see below).
-3. If JS returns empty, take a screenshot — the popup is visible and readable.
-4. For multi-segment flights, scroll down inside the popup to see connections.
+`WebFetch` on the `avs.io` link returns a 301 with the full `aviasales.ru` URL. Parse `expected_price` and route info from URL params — this gives you a price hint before opening a browser. Compare it later with the real ticket price; if they diverge by >15%, mention it to the user.
 
-**What to extract per flight:**
-- Route (airport codes and city names)
+### Phase B — Full data from browser
+
+1. Navigate the link with `mcp__claude-in-chrome__navigate` (batch with the next JS-extract via `browser_batch` if you can).
+2. Wait ~3–4 seconds inside a `setTimeout` Promise — Aviasales hydrates results progressively.
+3. Run the flight extractor (below).
+4. For multi-segment flights, scroll inside the popup or click into the "Details" view; the first leg is visible by default.
+
+### Airline-specific filter / verification
+
+If the user asks for a specific airline ("только Oman Air", "Turkish Airlines"), don't trust the "Оптимальный" label. Verify by reading airline logo `alt` text:
+
+```javascript
+const airlines = [...document.querySelectorAll('img[alt]')]
+  .map(i => i.alt).filter(a => a && a.length < 30 && /^[A-ZА-Я]/.test(a));
+[...new Set(airlines)];
+```
+
+Two-letter airline codes (`WY` = Oman Air, `SU` = Aeroflot, `TK` = Turkish, `EK` = Emirates, `EY` = Etihad, `QR` = Qatar) appear in the `t=` URL param and `img.avs.io/pics/al_square/{CODE}@...` image sources.
+
+### What to extract per flight
+
+- Route (airport codes + city names)
 - Date, departure time, arrival time, duration
-- Airline, flight type (regular / charter)
-- Stops: count, airports, layover duration
-- Baggage: hand luggage (weight × count), checked (weight × count), included or add-on cost
-- Refund/exchange policy
-- Price + seller list with individual prices
+- Airline, flight type (regular / charter — charter has a distinct badge)
+- Stops: count, layover airports, layover duration
+- Baggage: hand luggage (weight × count), checked (weight × count), included / add-on cost
+- Refund / exchange policy
+- Price + seller list with individual seller prices
+
+---
 
 ## Step 3: Extract Hotel Data (Ostrovok)
 
-Ostrovok is also an SPA. `WebFetch` returns only config JS — completely useless. Browser is required.
+Ostrovok is also an SPA. `WebFetch` returns only config JS — **never** use it. Browser only.
 
-1. Navigate to the hotel URL. Wait 2–3 seconds — the page title changes from "Загрузка отеля..." to the hotel name when ready.
-2. Run the hotel JS extractor (see below), or use `mcp__claude-in-chrome__find` for a quick scan.
-3. For TripAdvisor data, use the TripAdvisor JS extractor.
+1. Navigate to the hotel URL.
+2. Wait until `document.title !== 'Загрузка отеля...'` — the page loads in two phases (shell first, then room data). 5–7 seconds is the safe wait. Scraping earlier gives zero rooms.
+3. Run the room price extractor (see below).
+4. For TripAdvisor data and Ostrovok rating, use the meta extractor.
 
-**What to extract per hotel:**
+### What to extract per hotel
+
 - Name, stars, address, city
 - Check-in / check-out times
-- All room types with: name, size, bed type, meal plan, cancellation policy + deadline, price, payment method
+- Room types — name, size, bed, meal plan, cancellation policy + **exact deadline date**, price, payment method
 - Ostrovok rating + review count
-- TripAdvisor: URL, rating (out of 5), review count
+- TripAdvisor rating (out of 5) + review count + TripAdvisor URL
 
-## Step 4: Estimate Transfers
+---
 
-Add transfer rows between airports and hotels. Use these reference times:
+## Step 4: Transfers
 
-| Route | Duration |
-|-------|----------|
-| Istanbul IST → city center | 1–1.5h |
-| Nevşehir NAV → Göreme | 20–30 min |
-| Dalaman DLM → Fethiye | 1–1.5h |
-| Dalaman DLM → Marmaris | 1.5h |
-| Antalya AYT → Kemer | 1h |
-| Antalya AYT → Side | 1.5h |
-| Antalya AYT → Alanya | 2.5h |
+Insert transfer rows between airports and hotels. Reference times live in `references/transfers.md` — read only the region(s) you need. The table covers Turkey, Tanzania, Greece, Egypt, UAE.
 
-## Step 5: Check Logistics
+If the trip is in a country not covered, estimate from public sources (Google Maps, hotel website) and explicitly tell the user you used a rough estimate.
 
-Look for these problems and flag them in the output:
-- **Accommodation gaps** — nights with no hotel booked (e.g., late arrival, hotel starts next day)
-- **Check-in too early** — flight arrives before hotel check-in, accounting for transfer time
-- **Check-out too late** — flight departs and there's not enough time for checkout + transfer + 2h airport buffer
-- **Baggage mismatches** — fewer checked bags than passengers
-- **Non-refundable bookings** — highlight deadlines prominently
+---
+
+## Step 5: Logistics Checks
+
+Flag these in the output:
+
+- **Accommodation gaps** — a night with no hotel (late arrival + hotel starts next day → mark as risk).
+- **Check-in too early** — flight arrives before hotel check-in, accounting for transfer time. Usually fine if the hotel front desk is 24/7, but flag it.
+- **Check-out too late** — flight departs and there isn't enough time for checkout + transfer + airport buffer (90 min domestic, 2h international).
+- **Baggage mismatches** — `23 kg × 1` on a 2-passenger booking = one bag for two people. Always flag.
+- **Non-refundable bookings** — show the deadline prominently; sort the notes by deadline (earliest first).
+- **Tight layovers** — under 60 min international or 45 min domestic.
+- **Airline-specific baggage on return** — return-leg airlines often allow less baggage than outbound (e.g. AJet 10 kg vs Aeroflot 23 kg). Compare and warn.
+
+---
 
 ## Step 6: Generate HTML
 
-Save to `~/Desktop/trip_[destination]_[dates].html`. The file must be self-contained (inline CSS, no external stylesheets) with two export buttons.
+Save to `~/Desktop/trip_[destination]_[dates].html`. The file must be **self-contained** — inline CSS, no external stylesheets, two export buttons (XLSX, PDF), data inline.
 
-**Table structure:**
-- Color-coded rows: blue (`#0071e3`) = flights, green (`#34c759`) = hotels, orange (`#ff9500`) = transfers
-- Columns: #, Type, Date, Description, Time/Check-in-out, Details, Rating (TripAdvisor + Ostrovok for hotels), Price, Links
-- Each hotel row links to both Ostrovok and TripAdvisor
+**Reference template:** `assets/template.html` in this skill. Copy its structure verbatim, then fill in trip-specific data. Don't redesign the CSS from scratch each time.
 
-**Summary card:** Total, flights subtotal, hotels subtotal, trip duration, night count.
+### Auto-compute weekdays — don't guess
 
-**Notes card:** Logistics warnings, price disclaimers, baggage notes, cancellation deadlines.
+For each date, compute the weekday from the date itself instead of hand-mapping:
 
-**XLSX export:** Use SheetJS (`https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js`). Include all data in flat columns with separate columns for TripAdvisor rating, review count, Ostrovok rating, booking URL, TripAdvisor URL.
+```javascript
+// In the HTML <script>:
+new Date('2026-06-27').toLocaleDateString('ru-RU', {weekday: 'long'})
+// → "суббота"
+```
 
-**PDF export:** Opens a new window with a mobile-optimized card layout (max-width 420px). Cards grouped by day. No prices — only links, times, details, ratings. Auto-triggers `window.print()`. Use `break-inside: avoid` for cards.
+Or, when generating the HTML from Python, use `datetime.strptime(d, '%d.%m.%Y').strftime('%A')` with locale set to `ru_RU.UTF-8`.
 
-See `example-output.html` in this skill's directory for the reference implementation.
+### Table structure
+
+- Color-coded rows: blue (`#0071e3`) = flights, green (`#34c759`) = hotels, orange (`#ff9500`) = transfers, grey (`#b0b0b0`) = TBD/placeholder rows.
+- Columns: `#`, Type, Date (+ weekday), Description, Time/Check-in-out, Details, Rating (TripAdvisor + Ostrovok for hotels), Price (2 чел.), Links.
+- Hotel rows link to both Ostrovok and TripAdvisor.
+
+### Summary card
+
+Total, flights subtotal, hotels subtotal, trip duration, night count.
+
+### Notes card
+
+Logistics warnings, price disclaimers, baggage notes, cancellation deadlines (earliest first).
+
+### XLSX export button
+
+Use SheetJS (`https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js`). All data in flat columns with separate columns for TripAdvisor rating, review count, Ostrovok rating, booking URL, TripAdvisor URL. **Important: the XLSX button only works if the user opens the HTML in a real browser and clicks it.** For end-to-end automation use Step 6.5.
+
+### PDF export button
+
+Opens a new window with mobile-optimized card layout (max-width 420px), grouped by day, no prices (sharing-friendly), auto-triggers `window.print()`. Use `break-inside: avoid` for cards. Same caveat: requires user click.
+
+---
+
+## Step 6.5: Python export (when end-to-end automation is needed)
+
+If the user wants the XLSX and PDF as files on disk without clicking buttons, run `scripts/export_trip.py`:
+
+```bash
+python3 skills/trip-planner/scripts/export_trip.py \
+    --html ~/Desktop/trip_destination_dates.html \
+    --out-dir ~/Desktop/
+```
+
+This produces a real `.xlsx` (via `openpyxl`, no SheetJS) and a real `.pdf` (via `chrome --headless --print-to-pdf`) from the same source HTML. See the script's `--help` for options.
+
+Why bother: the HTML buttons require user-action and don't work end-to-end in scripted flows. The Python path is the default for "I want everything ready to share."
+
+---
 
 ## Step 7: Present Results
 
 Tell the user:
+
 - What was found (flight count, hotel count, total)
-- Any logistics issues
-- Price changes vs. shared link expectations
-- Path to the HTML file
+- Any logistics issues, sorted by severity
+- Price changes vs. shared link expectations (if you compared with `expected_price`)
+- Path to the HTML file (and XLSX/PDF if Step 6.5 ran)
+
+When you've offered multiple comparable options (e.g. two flights with different price/time/airline trade-offs), **present them and ask the user to pick**, don't auto-choose. Choosing silently has burned past sessions.
+
+---
+
+## Step 8: Optional — deploy to Vercel
+
+If the user asks to share a public link ("задеплой", "выложи", "deploy this"):
+
+```bash
+mkdir -p /tmp/trip-deploy
+cp ~/Desktop/trip_*.html /tmp/trip-deploy/index.html
+cd /tmp/trip-deploy
+npx -y vercel@latest deploy --prod --yes
+```
+
+Vercel returns both a project alias (e.g. `https://<project>.vercel.app`) and a deployment URL. Use the project alias — it's stable and shorter. Verify it returns 200 before reporting success.
+
+If the user is not logged in, `vercel whoami` will tell you. They'll need to run `vercel login` themselves (interactive).
 
 ---
 
 ## JS Extractors
 
-Tested JavaScript snippets for `mcp__claude-in-chrome__javascript_tool`. These work against the live DOM of Aviasales and Ostrovok as of April 2026.
+Tested JavaScript snippets for `mcp__claude-in-chrome__javascript_tool`. They work on the live DOM of Aviasales and Ostrovok and are resilient to hashed CSS class names because they match on text content.
 
-### Flight extractor (Aviasales — ticket popup)
+**Important:** never include `location.href`, `document.cookie`, or any session-id-bearing string in the JSON you return — the MCP blocks output containing those and you get `[BLOCKED: Cookie/query string data]` instead of your data.
+
+### Flight extractor (Aviasales search results)
 
 ```javascript
-const results = [];
-document.querySelectorAll('*').forEach(el => {
-  const text = el.textContent.trim();
-  if ((text.includes('в пути') || text.includes('в полёте')) && text.includes('₽') && text.length < 600 && text.length > 50) {
-    results.push(text.substring(0, 500));
-  }
-});
-const sellers = [];
-document.querySelectorAll('*').forEach(el => {
-  const text = el.textContent.trim();
-  if (text.includes('₽') && (text.includes('Купить') || text.includes('Ищем на')) && text.length < 200) {
-    sellers.push(text);
-  }
-});
-const baggage = [];
-document.querySelectorAll('*').forEach(el => {
-  const text = el.textContent.trim();
-  if ((text.includes('багаж') || text.includes('кладь') || text.includes('Добавить багаж')) && text.length < 200) {
-    baggage.push(text);
-  }
-});
-JSON.stringify({ flights: results.slice(0, 5), sellers: sellers.slice(0, 5), baggage: baggage.slice(0, 5) }, null, 2);
+new Promise(resolve => setTimeout(() => {
+  const results = [];
+  document.querySelectorAll('*').forEach(el => {
+    const text = el.textContent.trim();
+    if ((text.includes('в пути') || text.includes('в полёте')) && text.includes('₽') && text.length < 600 && text.length > 50) {
+      results.push(text.substring(0, 500));
+    }
+  });
+  const baggage = [];
+  document.querySelectorAll('*').forEach(el => {
+    const text = el.textContent.trim();
+    if ((text.includes('багаж') || text.includes('кладь') || text.includes('Добавить багаж')) && text.length < 200) {
+      baggage.push(text);
+    }
+  });
+  resolve(JSON.stringify({
+    title: document.title,
+    flights: [...new Set(results)].slice(0, 6),
+    baggage: [...new Set(baggage)].slice(0, 5)
+  }, null, 2));
+}, 4000))
+```
+
+### Airline list (for "только Oman Air" cases)
+
+```javascript
+const airlines = [...new Set(
+  [...document.querySelectorAll('img[alt]')]
+    .map(i => i.alt)
+    .filter(a => a && a.length < 30 && a.length > 1)
+)];
+JSON.stringify(airlines, null, 2);
 ```
 
 ### Baggage cost check (Aviasales)
@@ -153,49 +306,59 @@ document.querySelectorAll('*').forEach(el => {
   if (text.includes('Выбрать багаж') && text.length < 100) results.push(text);
   if (text === 'Без багажа' || (text.includes('багаж') && text.includes('кг') && text.length < 50)) results.push(text);
 });
-JSON.stringify(results, null, 2);
+JSON.stringify([...new Set(results)], null, 2);
 ```
 
-### Room prices (Ostrovok)
+### Hotel rooms (Ostrovok)
 
 ```javascript
-const rooms = [];
-document.querySelectorAll('*').forEach(el => {
-  const text = el.textContent.trim();
-  if (text.includes('₽') && text.includes('номер') && text.length > 50 && text.length < 500) {
-    if (text.match(/\d[\s\u00a0]\d{3}\s*₽/)) {
-      rooms.push(text.substring(0, 400));
+new Promise(resolve => setTimeout(() => {
+  const rooms = [];
+  document.querySelectorAll('*').forEach(el => {
+    const text = el.textContent.trim();
+    if (text.includes('₽') && text.length > 30 && text.length < 700) {
+      if (text.match(/\d[\s ]?\d{3,}\s*₽/) &&
+          (text.includes('Double') || text.includes('Single') || text.includes('Standard') ||
+           text.includes('Twin') || text.includes('номер') || text.includes('Queen'))) {
+        rooms.push(text.substring(0, 500));
+      }
+    }
+  });
+  resolve(JSON.stringify({
+    title: document.title,
+    rooms: [...new Set(rooms)].slice(0, 12)
+  }, null, 2));
+}, 6000))
+```
+
+### Hotel search by city (Ostrovok index page)
+
+```javascript
+const seen = new Set();
+const results = [];
+document.querySelectorAll('a[href*="/hotel/"]').forEach(a => {
+  const slug = a.getAttribute('href').split('?')[0];
+  if (seen.has(slug)) return;
+  seen.add(slug);
+  const card = a.closest('[class*="Card"], [class*="card"], li, article, div[class*="result"]');
+  if (card) {
+    const text = card.textContent.trim();
+    if (text.length > 100 && text.length < 600) {
+      results.push({ slug, summary: text.substring(0, 400) });
     }
   }
 });
-const unique = [...new Set(rooms)];
-JSON.stringify(unique.slice(0, 15), null, 2);
+JSON.stringify(results.slice(0, 12), null, 2);
 ```
 
-### Specific room type (Ostrovok)
-
-```javascript
-// Replace ROOM_NAME before running
-const ROOM_NAME = 'Standard Double Room';
-const results = [];
-document.querySelectorAll('*').forEach(el => {
-  const text = el.textContent.trim();
-  if (text.includes(ROOM_NAME) && text.includes('₽') && text.length < 500) {
-    results.push(text.substring(0, 400));
-  }
-});
-JSON.stringify(results.slice(0, 5), null, 2);
-```
-
-### Hotel meta + TripAdvisor (Ostrovok)
+### Hotel meta + TripAdvisor (Ostrovok hotel page)
 
 ```javascript
 const tripadvisor = [];
 document.querySelectorAll('a[href*="tripadvisor"]').forEach(a => {
   const img = a.querySelector('img[alt]');
   tripadvisor.push({
-    href: a.href,
-    text: a.textContent.trim().substring(0, 100),
+    href: a.href.split('?')[0],
     rating: img ? img.alt : null
   });
 });
@@ -211,24 +374,40 @@ document.querySelectorAll('*').forEach(el => {
 JSON.stringify({ tripadvisor: tripadvisor.slice(0, 3), ratings: ratings.slice(0, 3) }, null, 2);
 ```
 
-### Quick scan alternatives (using `find` tool)
+### Quick scan alternatives (`find` tool)
 
 When JS is overkill, use `mcp__claude-in-chrome__find`:
+
 - Prices: `"цена стоимость ₽ рублей номер"`
 - TripAdvisor: `"TripAdvisor tripadvisor rating отзыв"`
 - Baggage: `"багаж добавить багаж стоимость"`
+- Airlines: `"Oman Air Turkish Airlines Aeroflot"`
 
 ---
 
 ## Gotchas
 
-These are non-obvious behaviors discovered through real usage:
+Non-obvious behaviors discovered through real usage. Read this list before scraping.
 
-- **Ostrovok never works with WebFetch.** It's an SPA that returns only config JS. Always use the browser. No exceptions.
-- **Aviasales shared links do fresh searches.** The `avs.io` link doesn't preserve a specific ticket — it opens a search with the price as a hint. The actual available flights and prices may differ from when the link was created.
-- **Wait after Ostrovok navigation.** The page loads in two phases: first the shell (title "Загрузка отеля..."), then the room data. If you scrape too early, you get zero rooms. Wait until the title changes to the hotel name, or just sleep 2–3 seconds.
-- **Aviasales ticket popups scroll.** Multi-segment flights show only the first leg initially. Scroll down inside the popup to see connections, layover times, and the second segment.
-- **Prices are always for all passengers.** Both sites show totals for the requested passenger count, not per-person. Don't divide.
-- **Charter flights** have a special badge on Aviasales. These often have different baggage rules and no refunds. Always flag them.
-- **Baggage counts matter.** "23 kg × 1" on a 2-passenger booking means one bag for two people. Flag this mismatch.
-- **Cancellation deadlines** are the most actionable data point for users deciding whether to book now. Show them prominently.
+- **Ostrovok + WebFetch = never.** SPA returns config-only shell. Browser is the only path. (KI-01)
+- **Aviasales shared links do fresh searches.** The `avs.io` link doesn't preserve a specific ticket — it opens a search with the price as a hint. Real available flights and prices may differ from when the link was created. Always re-check on the live page. (KI-03)
+- **Ostrovok loads in two phases.** Wait until `document.title !== 'Загрузка отеля...'` (≈5 sec) — scraping the shell gives zero rooms. (KI-04)
+- **Aviasales popups scroll.** Multi-segment flights show only the first leg by default. Scroll inside the popup to see connections, layover times, second segment. (KI-02)
+- **Prices are totals, not per-person.** Both sites show the figure for the requested passenger count. Don't divide. (D-04)
+- **Charter flights** carry a special badge. They often have different baggage rules and no refunds. Always flag.
+- **Baggage counts can mismatch passenger count.** `23 kg × 1` on a 2-pax booking = one bag for two people. Always flag.
+- **Cancellation deadlines** are the single most actionable datapoint when the user is deciding whether to book now. Sort by earliest deadline and put them at the top of the Notes card.
+- **Cookie/session strings break JS-tool output.** If your `JSON.stringify` includes `location.href`, `document.cookie`, or any session ID, the MCP returns `[BLOCKED: Cookie/query string data]` instead of your data. Strip those before serialising.
+- **Browser MCP can disconnect.** A long session may drop the extension. Step 0 catches it; if it happens mid-session, surface the issue to the user immediately, don't retry-loop. (KI-09)
+- **Edit-tool struggles with unicode-escaped JS inside HTML.** Characters like `→`, `₽`, `&rarr;` in `<script>` blocks confuse the Edit tool's matching. For HTML/JS surgery use a Python script with raw strings, or rewrite the file with the Write tool. (KI-07 / D-07)
+- **`chrome --headless --print-to-pdf` is the reliable PDF path.** The `window.print()` button in the HTML works for humans but doesn't work end-to-end via the MCP (`file://` URLs get mangled). Use `scripts/export_trip.py`. (KI-08)
+- **`browser_batch` is significantly faster** for predictable sequences (navigate → wait → JS-extract → screenshot). Batch them whenever the next 2+ steps are independent. The MCP nudges you toward batches; listen.
+- **Prefer ARK to JRO for Arusha-bound trips** — ARK is in town, JRO is ~50 km out. Bigger airport, but worse logistics for "land and sleep" use cases.
+
+---
+
+## When in doubt
+
+If a comparable trade-off appears (two flights, two hotels, two routings), present both options to the user with the trade-off named ("Аэрофлот 41к / прямой / днём  vs S7 47к / прямой / вечером — какой берём?") instead of silently picking. Past sessions burned trust by auto-choosing in ambiguous cases.
+
+If a JS extractor returns nothing or partial data, fall back to a screenshot — the user can read the popup directly, and you can describe what you see. The screenshot fallback is also useful when the DOM structure changes between releases.
