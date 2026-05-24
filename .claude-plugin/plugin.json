@@ -1,5 +1,6 @@
 {
   "name": "trip-planner",
+  "version": "0.1.0",
   "description": "Extract flight + hotel data from Aviasales / Ostrovok links and compile into a self-contained HTML itinerary with XLSX/PDF export. Triggers on avs.io / aviasales.ru / corp.ostrovok.ru links and Russian travel keywords.",
   "author": {
     "name": "kyzdes"
