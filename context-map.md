@@ -9,8 +9,8 @@ visibility: public
 status: mvp-complete
 scale: XS
 primary_stack: [Claude Code skill, Markdown, JS extractors]
-last_updated: 2026-05-14
-tasks_next: "P1: T-02 (multi-flight compare), T-09 (t-string parser), T-11 (JSON SoT в HTML). Все P0 закрыты в итерации 2026-05-14."
+last_updated: 2026-05-28
+tasks_next: "Задачи теперь в Linear: project trip-planner (team KYZ) — https://linear.app/kyzdes/project/trip-planner-7398870781ce. P0: KYZ-200 (recall $TRIP_PLANNER_HOME), KYZ-201 (script paths под плагином). Эта таблица заморожена для истории."
 ---
 
 # Context Map: Trip Planner Skill
@@ -35,14 +35,24 @@ tasks_next: "P1: T-02 (multi-flight compare), T-09 (t-string parser), T-11 (JSON
 
 ```
 trip-planner-skill/
-├── SKILL.md              ← ЯДРО: инструкции + JS-экстракторы + 7-шаговый workflow
+├── skills/trip-planner/
+│   ├── SKILL.md          ← ЯДРО: workflow (Recall + Step 0–9) + JS-экстракторы
+│   ├── assets/template.html
+│   ├── references/transfers.md
+│   └── scripts/
+│       ├── export_trip.py     ← HTML → XLSX + PDF
+│       └── trip_registry.py   ← Память о поездках (recall/record), stdlib-only
 ├── example-output.html   ← Эталонный HTML-вывод (Турция, июнь 2026, 448 строк)
 ├── README.md             ← Публичная документация для GitHub
 ├── PRD.md                ← Product Requirements Document
-├── DOCS.md               ← Техническая документация
+├── DOCS.md               ← Техническая документация (см. §7 — Память о поездках)
 ├── context-map.md        ← Этот файл (v2 schema)
-└── .superset/
-    └── config.json       ← Конфигурация хуков (пока пустая)
+├── .claude-plugin/plugin.json
+├── hooks/hooks.json      ← SessionStart auto-update
+└── scripts/auto-update.sh
+
+# Память о поездках (создаётся при первом использовании, ВНЕ каталога плагина):
+~/.trip-planner/{trips.json, trips.md}   ← override через $TRIP_PLANNER_HOME
 ```
 
 ### Читай первым при задаче
@@ -91,7 +101,7 @@ Step 7: Отчёт пользователю
 | ID | Area | Severity | Symptom | Status | Agent-Ready | Rule |
 |----|------|----------|---------|--------|-------------|------|
 | KI-01 | data/ostrovok | high | Ostrovok + WebFetch возвращает пустой shell (SPA) | wontfix | yes | Использовать ТОЛЬКО Chrome MCP, без исключений |
-| KI-02 | data/aviasales | low | Popup Aviasales скроллится — мультисегмент: первый leg виден сразу, остальные нужно проскроллить | open | partial | Для multi-leg рейса вызвать scroll в JS-экстракторе |
+| KI-02 | data/aviasales | low | Popup Aviasales скроллится — мультисегмент: первый leg виден сразу, остальные нужно проскроллить | open → Linear KYZ-210 | partial | Для multi-leg рейса вызвать scroll в JS-экстракторе |
 | KI-03 | data/aviasales | medium | `avs.io` short-link ≠ конкретный билет — поисковый hint, реальная цена может отличаться | open | yes | Сверять `expected_price` из URL с реальной ценой на странице билета |
 | KI-04 | data/ostrovok | low | Ostrovok двухфазная загрузка — первые 2-3 секунды title === "Загрузка отеля..." | wontfix | yes | Ждать пока `document.title !== "Загрузка отеля..."` (2-3 сек) |
 | KI-05 | export/xlsx | low | XLSX-экспорт зависит от SheetJS CDN — требует интернета | open | yes | При offline-режиме откатиться на Python+openpyxl (см. KI-08) |
@@ -99,13 +109,14 @@ Step 7: Отчёт пользователю
 | KI-07 | tooling/edit | high | `Edit`-tool падает на JS-секциях HTML с unicode escape (`→` рендерится как `→` в Read, но на диске литерал) | resolved | yes | Задокументировано в SKILL.md Gotchas; использовать Python-script или Write tool, не Edit |
 | KI-08 | export/pdf | medium | `window.print()` PDF-кнопка в HTML не работает через Chrome MCP — `file://` конвертируется в `https://file:///` | resolved | yes | `scripts/export_trip.py` через `chrome --headless --print-to-pdf` — Step 6.5 в SKILL.md |
 | KI-09 | browser/mcp | medium | Браузер-расширение Claude отваливается при долгих сессиях | resolved | yes | Step 0 в SKILL.md: tabs_context_mcp в самом начале, без retry-loop |
-| KI-10 | data/aviasales | low | t-string Aviasales содержит unix-timestamps сегментов мульти-leg рейса, но не парсится скиллом | open | yes | При мульти-leg рейсе декодировать t-string для длины пересадки и точных времён сегментов |
-| KI-11 | architecture/html | medium | 4 секции HTML дублируют данные (table, XLSX-функция, PDF-функция, summary) — рассинхронизация при правках | open | partial | При итерации использовать Python script, который правит все 4 секции атомарно; долгосрочно — JSON single-source-of-truth (T-11) |
+| KI-10 | data/aviasales | low | t-string Aviasales содержит unix-timestamps сегментов мульти-leg рейса, но не парсится скиллом | open → Linear KYZ-209 | yes | При мульти-leg рейсе декодировать t-string для длины пересадки и точных времён сегментов |
+| KI-11 | architecture/html | medium | 4 секции HTML дублируют данные (table, XLSX-функция, PDF-функция, summary) — рассинхронизация при правках | open → Linear KYZ-206 | partial | При итерации использовать Python script, который правит все 4 секции атомарно; долгосрочно — JSON single-source-of-truth (T-11) |
 | KI-12 | data/dates | low | Дни недели для дат вычисляются вручную, риск ошибки | resolved | yes | Документировано в Step 6: `toLocaleDateString('ru-RU', {weekday:'long'})` или Python datetime |
 | KI-13 | data/output | low | JS-экстрактор может вернуть `[BLOCKED: Cookie/query string data]` если в JSON-выводе есть session ID | resolved | yes | Документировано в JS Extractors: не включать `location.href`/`document.cookie` в output |
 | KI-14 | data/aviasales | low | Скилл не умел искать рейс из текста без готовой ссылки | resolved | yes | Aviasales URL-конструктор `{ORIGIN}{DDMM}{DESTINATION}{N_PAX}` в Step 1 |
 | KI-15 | data/ostrovok | low | Скилл не умел искать отель по названию города без готовой ссылки | resolved | yes | Ostrovok search-by-city flow в Step 1 + JS-экстрактор для списка отелей |
 | KI-16 | performance | low | Sequential MCP calls в 3-5× медленнее batched | resolved | yes | Документировано в workflow и Step 2: использовать `browser_batch` для последовательностей |
+| KI-17 | tooling/scripts | low | Скрипты в SKILL.md адресуются относительно репо (`skills/trip-planner/scripts/...`) — при установке как плагин путь другой | open → Linear KYZ-201 | yes | Под плагином использовать `${CLAUDE_PLUGIN_ROOT}/skills/trip-planner/scripts/...`; касается `export_trip.py` (Step 6.5) и `trip_registry.py` (Step 9) |
 
 ---
 
@@ -124,10 +135,14 @@ Step 7: Отчёт пользователю
 | D-09 | 2026-05-14 | architecture/skill | Перейти от моно-SKILL.md к `assets/` + `references/` + `scripts/` структуре | Файл рос до 234 строк и стал монолитом; разделение даёт progressive disclosure и переиспользуемые скрипты | active | yes |
 | D-10 | 2026-05-14 | export | `scripts/export_trip.py` — официальный путь для XLSX+PDF из готового HTML | Парсит HTML через bs4, пишет XLSX через openpyxl, PDF через `chrome --headless --print-to-pdf` — детерминированно и без user-action | active | yes |
 | D-11 | 2026-05-14 | feature | Step 8 (опциональный Vercel deploy) — встроенная фича скилла | Пользователь дважды просил публичный URL после генерации; естественное продолжение workflow | active | yes |
+| D-12 | 2026-05-28 | architecture/memory | Персистентная память о поездках: `trips.json` (canonical) + `trips.md` (mirror) в `~/.trip-planner/` (override `$TRIP_PLANNER_HOME`), управляется stdlib-only `trip_registry.py`; recall перед Step 0, record на Step 9 | Скилл был stateless — ни один агент не знал историю поездок. Память ВНЕ каталога плагина, т.к. `claude plugin update` стирает файлы плагина; stdlib-only, чтобы recall/record не падали из-за pip-зависимостей; single-writer-скрипт даёт единую схему для всех агентов | active | yes |
+| D-13 | 2026-05-28 | process/tracking | Linear — основной живой трекер задач (project trip-planner, team KYZ). `context-map.md` хранит Decisions + Known Issues + архитектуру + Session Log как память; таблица Tasks заморожена | Нужен единый трекер для нескольких агентов; дублирование задач в md и Linear = дрейф. KI остаются здесь как память, но открытые → заводятся issue в Linear со ссылкой | active | yes |
 
 ---
 
 ## Tasks / Next Work
+
+> ⚠️ **Active task tracking moved to Linear** — project **trip-planner** (https://linear.app/kyzdes/project/trip-planner-7398870781ce), team `KYZ`, on 2026-05-28. This table is **frozen for history** — do **not** add new tasks here; create them in Linear. Open items were migrated: T-02→KYZ-211, T-03→KYZ-213, T-04→KYZ-214, T-05→KYZ-207, T-09→KYZ-209, T-11→KYZ-206, T-12→KYZ-212; plus the memory-hardening backlog KYZ-200…KYZ-205, KYZ-208, KYZ-215…KYZ-218.
 
 | ID | Priority | Area | Task | Status | Owner | Agent-Ready | Validation | Source |
 |----|----------|------|------|--------|-------|-------------|------------|--------|
@@ -149,6 +164,7 @@ Step 7: Отчёт пользователю
 | T-16 | P1 | skill | Step 8: optional Vercel deploy | done | claude | yes | `npx vercel deploy --prod --yes`; протестировано на Turkey + Tanzania | session-2026-05-13 |
 | T-17 | P1 | skill | Airline-specific filter / verification flow | done | claude | yes | Документировано в Step 2 + JS-экстрактор `img[alt]`; работало для Oman Air | session-2026-05-13 |
 | T-18 | P2 | skill | `browser_batch` adoption — упомянуть в SKILL.md + примеры | done | claude | partial | Workflow at-a-glance + Step 2 callout; примеры пока не вставлены | session-2026-05-14 |
+| T-19 | P1 | skill/memory | Память о поездках: recall (перед Step 0) + record (Step 9) + стор `~/.trip-planner/` + `trip_registry.py` | done | claude | yes | `selftest` зелёный; record→list→get→remove + idempotent upsert; HTML auto-capture на example-output.html; CI-шаг добавлен | session-2026-05-28 |
 
 ---
 
@@ -180,6 +196,8 @@ Step 7: Отчёт пользователю
 ## Validation Checklist
 
 - [ ] SKILL.md содержит все 7 шагов workflow + Step 0 (browser check) + Step 6.5 (Python export) после T-07/T-08
+- [ ] SKILL.md содержит Recall (перед Step 0) + Step 9 (record) + раздел Memory store
+- [ ] `trip_registry.py selftest` зелёный; record→list→get→remove roundtrip работает
 - [ ] JS-экстракторы работают на тестовых страницах Aviasales и Ostrovok
 - [ ] example-output.html открывается в браузере, XLSX скачивается, PDF корректно печатается
 - [ ] Трансферная таблица (Турция) актуальна
@@ -206,3 +224,5 @@ Step 7: Отчёт пользователю
 | 2026-05-05 | Turkey re-plan (27.06-06.07) + Vercel deploy | Confirmed: airline filter, Vercel publish gap | T-16, T-17 |
 | 2026-05-07 | Tanzania/Zanzibar one-way plan | Confirmed: hotel-search-by-city + URL constructor gaps | T-14, T-15, KI-13..16 |
 | 2026-05-14 | Skill audit + major refactor (via skill-creator) | All P0 closed; `assets/`, `references/`, `scripts/` introduced; new `export_trip.py` working end-to-end | D-09..11, T-01/06/07/08/10/13..18 done |
+| 2026-05-28 | Память о поездках (recall + record) | Скилл стал stateful: `trip_registry.py` (stdlib-only), стор `~/.trip-planner/` вне каталога плагина, Recall перед Step 0 + Step 9 record, CI-selftest | D-12, T-19 done, KI-17 |
+| 2026-05-28 | Tech-lead review + переход на Linear | Создан Linear-проект trip-planner (KYZ): 4 milestones, 19 issues (KYZ-200…218); таблица Tasks заморожена; начат P0 (KYZ-200/201) | D-13; backlog migrated |

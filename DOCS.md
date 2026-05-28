@@ -348,3 +348,46 @@ cp -r trip-planner-skill ~/.claude/skills/trip-planner
 - DLM → VKO: только 1 место багажа (23 кг) на двоих
 - Cappadocia Cave Suites: Adult Only +12, ресепшн 24/7
 - Бесплатная отмена Cave Suites до 06.06, Jiva до 23.06
+
+---
+
+## 7. Память о поездках (persistent registry)
+
+Скилл помнит каждую поездку, над которой работал, чтобы **любой** агент с доступом к скиллу понимал, что пользователь уже планировал. Память хранится на диске, а не в сессии.
+
+### Где лежит
+
+- **Каталог:** `~/.trip-planner/` (переопределяется через `$TRIP_PLANNER_HOME`).
+- **`trips.json`** — канонический источник (machine-managed).
+- **`trips.md`** — человекочитаемое зеркало, **генерируется автоматически** при каждой записи. Руками не править.
+
+**Почему вне каталога плагина:** плагин авто-обновляется (`claude plugin update` заменяет файлы плагина), поэтому всё, что лежало бы внутри `skills/trip-planner/`, стиралось бы при обновлении. Реестр в `~/.trip-planner/` переживает обновления и общий для всех агентов и сессий.
+
+### Скрипт-менеджер: `scripts/trip_registry.py`
+
+Единственный писатель обоих файлов. **Только stdlib** (без pip-зависимостей) — recall/record не должны падать из-за отсутствующего пакета. Записи атомарные (temp-файл + `os.replace`).
+
+| Команда | Назначение |
+|---------|-----------|
+| `record` | Upsert поездки по `--id` (или производному из destination+месяц). Опциональный `--html` авто-заполняет поля из сгенерированного HTML; явные флаги перекрывают распарсенное. Идемпотентно: повторный вызов с тем же id обновляет запись, сохраняя `created_at`. |
+| `list [--json]` | Список всех поездок (таблица или JSON). |
+| `get --id ID [--json]` | Одна поездка. |
+| `remove --id ID` | Удалить поездку. |
+| `selftest` | CI-смоук: record → list → get → idempotent update → remove во временном сторе. |
+
+### Поля записи
+
+`id`, `destination`, `dates`, `start`, `end`, `origin`, `route`, `pax`, `nights` (авто-расчёт из start/end), `flights`, `hotels`, `total`, `currency`, `status` (planned/booked/archived), `html_path`, `deploy_url`, `notes`, `created_at`, `updated_at`.
+
+### HTML auto-capture
+
+`record --html` парсит наш собственный шаблон (regex по `<title>`, `.subtitle`, первому `.summary-value` в карточке «Итого», и счётчику строк `type-flight` / `type-hotel` — те же маркеры, что использует `export_trip.py`). Best-effort: если поле не распарсилось, берётся флаг/существующее значение, скрипт не падает.
+
+### Поток recall / record
+
+```
+Recall (перед Step 0): cat ~/.trip-planner/trips.json
+  → ответить на вопросы об истории / детектировать дубликат / взять контекст
+Step 9 (после Step 6/7): trip_registry.py record --html ... [флаги]
+  → после Vercel-деплоя: повторный record с тем же id + --deploy-url
+```
