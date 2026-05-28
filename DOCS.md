@@ -369,15 +369,16 @@ cp -r trip-planner-skill ~/.claude/skills/trip-planner
 
 | Команда | Назначение |
 |---------|-----------|
-| `record` | Upsert поездки по `--id` (или производному из destination+месяц). Опциональный `--html` авто-заполняет поля из сгенерированного HTML; явные флаги перекрывают распарсенное. Идемпотентно: повторный вызов с тем же id обновляет запись, сохраняя `created_at`. |
-| `list [--json]` | Список всех поездок (таблица или JSON). |
-| `get --id ID [--json]` | Одна поездка. |
+| `record` | Upsert поездки по `--id` (или производному из destination+месяц). Опциональный `--html` авто-заполняет поля И кэширует структурный `trip-data` блок в `data`. `--data file.json` — задать кэш явно. Идемпотентно; сохраняет `created_at`. Derived-id коллизия с другой поездкой → суффикс + warning (не перезапись). Запись сериализуется через `fcntl.flock`. |
+| `list [--json]` | Список всех поездок (таблица или JSON; `data` в JSON-выводе опускается). |
+| `get --id ID [--json]` | Одна поездка (включая `data`). |
 | `remove --id ID` | Удалить поездку. |
-| `selftest` | CI-смоук: record → list → get → idempotent update → remove во временном сторе. |
+| `render --id ID [--out PATH]` | Перегенерировать HTML поездки из кэшированного `data` — **без повторного скрейпинга**. Требует, чтобы поездка была записана из JSON-SoT HTML (или с `--data`). |
+| `selftest` | CI-смоук: record → list → get → update → collision → render → remove во временном сторе. |
 
 ### Поля записи
 
-`id`, `destination`, `dates`, `start`, `end`, `origin`, `route`, `pax`, `nights` (авто-расчёт из start/end), `flights`, `hotels`, `total`, `currency`, `status` (planned/booked/archived), `html_path`, `deploy_url`, `notes`, `created_at`, `updated_at`.
+`id`, `destination`, `dates`, `start`, `end`, `origin`, `route`, `pax`, `nights` (авто-расчёт из start/end), `flights`, `hotels`, `total`, `currency`, `status` (planned/booked/archived), `html_path`, `deploy_url`, `notes`, `data` (кэш структурного `trip-data` для re-render), `created_at`, `updated_at`.
 
 ### HTML auto-capture
 
