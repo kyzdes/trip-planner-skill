@@ -35,8 +35,14 @@ import os
 import re
 import sys
 import tempfile
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+
+try:
+    import fcntl  # POSIX advisory file locking (macOS/Linux); absent on Windows
+except ImportError:  # pragma: no cover
+    fcntl = None
 
 SCHEMA_VERSION = 1
 
@@ -101,6 +107,30 @@ def save(home: Path, data: dict) -> None:
     """Persist canonical JSON, then regenerate the human-readable mirror."""
     _atomic_write(json_path(home), json.dumps(data, ensure_ascii=False, indent=2) + "\n")
     _atomic_write(md_path(home), render_md(data))
+
+
+@contextmanager
+def _lock(home: Path):
+    """Serialise the read-modify-write so concurrent records can't lose data.
+
+    Best-effort: on platforms without fcntl (Windows) it degrades to no lock.
+    """
+    home.mkdir(parents=True, exist_ok=True)
+    lock_file = open(home / ".lock", "w")
+    try:
+        if fcntl is not None:
+            try:
+                fcntl.flock(lock_file, fcntl.LOCK_EX)
+            except OSError:
+                pass
+        yield
+    finally:
+        if fcntl is not None:
+            try:
+                fcntl.flock(lock_file, fcntl.LOCK_UN)
+            except OSError:
+                pass
+        lock_file.close()
 
 
 # --------------------------------------------------------------------------- #
@@ -188,53 +218,74 @@ def parse_html(path: Path) -> dict:
 # Core operations
 # --------------------------------------------------------------------------- #
 def op_record(home: Path, flags: dict, html: Path | None) -> dict:
-    data = load(home)
-    trips = data["trips"]
     parsed = parse_html(html) if html else {}
+    with _lock(home):
+        data = load(home)
+        trips = data["trips"]
 
-    def pick(key, default=None):
-        if flags.get(key) is not None:
-            return flags[key]
-        if parsed.get(key) is not None:
-            return parsed[key]
-        return default
+        def pick(key, default=None):
+            if flags.get(key) is not None:
+                return flags[key]
+            if parsed.get(key) is not None:
+                return parsed[key]
+            return default
 
-    destination = pick("destination")
-    start = pick("start")
-    tid = flags.get("id") or derive_id(destination, start)
+        destination = pick("destination")
+        start = pick("start")
+        explicit_id = bool(flags.get("id"))
+        tid = flags.get("id") or derive_id(destination, start)
 
-    existing = next((t for t in trips if t.get("id") == tid), None)
-    base = dict(existing) if existing else {}
+        existing = next((t for t in trips if t.get("id") == tid), None)
 
-    entry: dict = {"id": tid}
-    for key in FIELDS:
-        if key in ("id", "created_at", "updated_at"):
-            continue
-        entry[key] = pick(key, base.get(key))
+        # Collision guard: a *derived* id that lands on a genuinely different
+        # trip (different start date) must not silently overwrite it. An
+        # explicit --id always targets that entry, so it's never re-routed.
+        if (existing and not explicit_id and start
+                and existing.get("start") and existing["start"] != start):
+            n = 2
+            while any(t.get("id") == f"{tid}-{n}" for t in trips):
+                n += 1
+            new_tid = f"{tid}-{n}"
+            print(
+                f"warning: id {tid!r} already used by a trip starting "
+                f"{existing['start']}; recording new trip as {new_tid!r} "
+                f"(pass --id to update an existing trip)",
+                file=sys.stderr,
+            )
+            tid = new_tid
+            existing = None
 
-    # html_path defaults to the parsed file if not set explicitly (absolute,
-    # so the stored path stays valid regardless of the recording cwd).
-    if entry.get("html_path") is None and html is not None:
-        entry["html_path"] = os.path.abspath(os.path.expanduser(str(html)))
+        base = dict(existing) if existing else {}
 
-    # nights auto-computed from dates when not supplied.
-    if entry.get("nights") is None:
-        entry["nights"] = _days_between(entry.get("start"), entry.get("end"))
+        entry: dict = {"id": tid}
+        for key in FIELDS:
+            if key in ("id", "created_at", "updated_at"):
+                continue
+            entry[key] = pick(key, base.get(key))
 
-    # status defaults to "planned" only on first creation.
-    if entry.get("status") is None:
-        entry["status"] = base.get("status") or "planned"
+        # html_path defaults to the parsed file if not set explicitly (absolute,
+        # so the stored path stays valid regardless of the recording cwd).
+        if entry.get("html_path") is None and html is not None:
+            entry["html_path"] = os.path.abspath(os.path.expanduser(str(html)))
 
-    entry["created_at"] = base.get("created_at") or now_iso()
-    entry["updated_at"] = now_iso()
+        # nights auto-computed from dates when not supplied.
+        if entry.get("nights") is None:
+            entry["nights"] = _days_between(entry.get("start"), entry.get("end"))
 
-    if existing:
-        trips[:] = [entry if t.get("id") == tid else t for t in trips]
-    else:
-        trips.append(entry)
+        # status defaults to "planned" only on first creation.
+        if entry.get("status") is None:
+            entry["status"] = base.get("status") or "planned"
 
-    save(home, data)
-    return entry
+        entry["created_at"] = base.get("created_at") or now_iso()
+        entry["updated_at"] = now_iso()
+
+        if existing:
+            trips[:] = [entry if t.get("id") == tid else t for t in trips]
+        else:
+            trips.append(entry)
+
+        save(home, data)
+        return entry
 
 
 def op_get(home: Path, tid: str) -> dict | None:
@@ -242,13 +293,14 @@ def op_get(home: Path, tid: str) -> dict | None:
 
 
 def op_remove(home: Path, tid: str) -> bool:
-    data = load(home)
-    before = len(data["trips"])
-    data["trips"] = [t for t in data["trips"] if t.get("id") != tid]
-    if len(data["trips"]) == before:
-        return False
-    save(home, data)
-    return True
+    with _lock(home):
+        data = load(home)
+        before = len(data["trips"])
+        data["trips"] = [t for t in data["trips"] if t.get("id") != tid]
+        if len(data["trips"]) == before:
+            return False
+        save(home, data)
+        return True
 
 
 def op_list(home: Path) -> list[dict]:
@@ -461,6 +513,19 @@ def _selftest() -> int:
         assert e2["created_at"] == created, "created_at must be preserved"
         assert e2["total"] == "≈316 047 ₽", "existing fields must survive update"
         assert len(op_list(home)) == 1, "update must not duplicate"
+
+        # Collision guard: a different trip (different start) in the same
+        # destination+month must not overwrite — it gets a suffixed id.
+        e3 = op_record(home, {
+            "id": None, "destination": "Турция", "dates": "1–5 июня 2026",
+            "start": "2026-06-01", "end": "2026-06-05",
+            "origin": None, "route": None, "pax": 2, "nights": None,
+            "flights": None, "hotels": None, "total": None, "currency": None,
+            "status": None, "html_path": None, "deploy_url": None, "notes": None,
+        }, None)
+        assert e3["id"] == "турция-2026-06-2", e3["id"]
+        assert len(op_list(home)) == 2, "collision must add, not overwrite"
+        assert op_remove(home, "турция-2026-06-2") is True
 
         assert op_remove(home, "турция-2026-06") is True
         assert op_get(home, "турция-2026-06") is None

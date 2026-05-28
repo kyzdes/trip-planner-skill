@@ -57,7 +57,7 @@ If the file doesn't exist, there's no history yet — proceed silently to Step 0
 
 ## Step 0: Browser readiness check
 
-Before anything else, call `mcp__claude-in-chrome__tabs_context_mcp` with `createIfEmpty: true`. This serves three purposes:
+Once you've recalled past trips (above) and the task needs scraping, **this is the first browser action** — call `mcp__claude-in-chrome__tabs_context_mcp` with `createIfEmpty: true` before any navigate/extract. This serves three purposes:
 
 1. **Verifies the Claude-in-Chrome MCP is alive.** If the call errors, the user's extension is disconnected. Don't loop — tell them once: *"Чтобы продолжить, переподключи расширение Claude in Chrome (значок в правом верхнем углу браузера)."* Then stop and wait.
 2. **Gives you a valid `tabId`** for the rest of the session. Reuse it; never invent IDs.
