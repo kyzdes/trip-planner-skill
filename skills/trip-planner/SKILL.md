@@ -320,9 +320,14 @@ Where the recalled/recorded data lives:
 - **Files:** `trips.json` (canonical, machine-managed) and `trips.md` (human-readable mirror, **auto-generated** — never hand-edit it).
 - **Outside the plugin dir on purpose.** The plugin auto-updates (`claude plugin update` replaces its files), so anything stored inside the skill folder would be wiped. The registry survives updates and is shared by every agent and session.
 - **Single writer.** Only `scripts/trip_registry.py` writes these files (atomic writes, consistent schema). To read, just `cat` the JSON; to change anything, use the script.
-- **Per-trip fields:** `id`, `destination`, `dates`, `start`, `end`, `origin`, `route`, `pax`, `nights`, `flights`, `hotels`, `total`, `currency`, `status` (planned/booked/archived), `html_path`, `deploy_url`, `notes`, `created_at`, `updated_at`.
+- **Per-trip fields:** `id`, `destination`, `dates`, `start`, `end`, `origin`, `route`, `pax`, `nights`, `flights`, `hotels`, `total`, `currency`, `status` (planned/booked/archived), `html_path`, `deploy_url`, `notes`, `data` (cached structured trip — see below), `created_at`, `updated_at`.
+- **Cached structure → update without re-scraping.** Recording from a JSON-SoT HTML (`--html`) also caches that trip's `trip-data` block under `data`. To change a date or swap a hotel later, you don't need the browser: either edit the `trip-data` block in the existing HTML (all views re-render from it), or regenerate the file from memory with `render`:
 
-Other commands: `list` (human table or `--json`), `get --id <id>`, `remove --id <id>`.
+```bash
+python3 "${CLAUDE_SKILL_DIR:-skills/trip-planner}/scripts/trip_registry.py" render --id turkey-2026-06 --out ~/Desktop/trip_turkey_2026-06.html
+```
+
+Other commands: `list` (human table or `--json`), `get --id <id>`, `remove --id <id>`, `render --id <id> [--out <path>]`.
 
 ---
 

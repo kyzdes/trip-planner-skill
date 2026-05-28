@@ -198,6 +198,29 @@ def parse_html(path: Path) -> dict:
     return _parse_legacy(text)
 
 
+def extract_trip_data(path: Path) -> dict | None:
+    """Return the parsed `trip-data` JSON object from an HTML file, or None."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    m = re.search(
+        r'<script id="trip-data" type="application/json"[^>]*>(.*?)</script>',
+        text, re.DOTALL | re.IGNORECASE,
+    )
+    if not m:
+        return None
+    try:
+        return json.loads(m.group(1))
+    except (json.JSONDecodeError, ValueError):
+        return None
+
+
+def template_path() -> Path:
+    """The bundled HTML template (assets/template.html, sibling of scripts/)."""
+    return Path(__file__).resolve().parent.parent / "assets" / "template.html"
+
+
 def _split_subtitle(subtitle: str) -> dict:
     out: dict = {}
     clean = _html.unescape(_strip_tags(subtitle)).strip()
@@ -266,6 +289,7 @@ def _parse_legacy(text: str) -> dict:
 # --------------------------------------------------------------------------- #
 def op_record(home: Path, flags: dict, html: Path | None) -> dict:
     parsed = parse_html(html) if html else {}
+    html_data = extract_trip_data(html) if html else None
     with _lock(home):
         data = load(home)
         trips = data["trips"]
@@ -326,6 +350,13 @@ def op_record(home: Path, flags: dict, html: Path | None) -> dict:
         entry["created_at"] = base.get("created_at") or now_iso()
         entry["updated_at"] = now_iso()
 
+        # Cache the structured trip model (the trip-data block) so the trip can
+        # be re-rendered/updated later without re-scraping (KYZ-207). Explicit
+        # --data wins, else what we parsed out of --html, else keep existing.
+        cached = flags.get("data") or html_data or base.get("data")
+        if cached is not None:
+            entry["data"] = cached
+
         if existing:
             trips[:] = [entry if t.get("id") == tid else t for t in trips]
         else:
@@ -352,6 +383,38 @@ def op_remove(home: Path, tid: str) -> bool:
 
 def op_list(home: Path) -> list[dict]:
     return sorted(load(home)["trips"], key=sort_key, reverse=True)
+
+
+def op_render(home: Path, tid: str, out: str | None) -> tuple[Path | None, str | None]:
+    """Re-emit a trip's HTML from its cached structured data — no re-scraping.
+
+    Returns (output_path, None) on success, or (None, reason) if the trip is
+    unknown or has no cached `data` (e.g. recorded from a legacy HTML).
+    """
+    entry = op_get(home, tid)
+    if entry is None:
+        return None, f"no trip with id {tid!r}"
+    data = entry.get("data")
+    if not data:
+        return None, (f"trip {tid!r} has no cached structured data — record it "
+                      f"from a JSON-SoT HTML (--html) or pass --data to enable re-render")
+    tpl = template_path().read_text(encoding="utf-8")
+    blob = json.dumps(data, ensure_ascii=False, indent=2)
+    new_html, n = re.subn(
+        r'(<script id="trip-data" type="application/json"[^>]*>)(.*?)(</script>)',
+        lambda m: m.group(1) + "\n" + blob + "\n" + m.group(3),
+        tpl, count=1, flags=re.DOTALL,
+    )
+    if not n:
+        return None, "template is missing its trip-data block"
+    if out:
+        outp = Path(out).expanduser()
+    elif entry.get("html_path"):
+        outp = Path(entry["html_path"]).expanduser()
+    else:
+        outp = Path.cwd() / f"{tid}.html"
+    _atomic_write(outp, new_html)
+    return outp, None
 
 
 # --------------------------------------------------------------------------- #
@@ -453,6 +516,8 @@ def _add_record_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument("--html-path", dest="html_path", help="Path to the trip HTML on disk")
     p.add_argument("--deploy-url", dest="deploy_url")
     p.add_argument("--notes")
+    p.add_argument("--data", type=Path,
+                   help="trip-data JSON file (or '-' for stdin) to cache for re-render")
 
 
 def _flags_from_args(args: argparse.Namespace) -> dict:
@@ -480,23 +545,43 @@ def main(argv=None) -> int:
     prm = sub.add_parser("remove", help="Delete one trip")
     prm.add_argument("--id", required=True)
 
+    prn = sub.add_parser("render", help="Re-emit a trip's HTML from cached data (no re-scrape)")
+    prn.add_argument("--id", required=True)
+    prn.add_argument("--out", help="Output HTML path (default: the trip's html_path)")
+
     sub.add_parser("selftest", help="CI smoke test (uses a temp store)")
 
     args = parser.parse_args(argv)
     home = resolve_home()
 
     if args.cmd == "record":
-        entry = op_record(home, _flags_from_args(args), args.html)
+        flags = _flags_from_args(args)
+        if args.data is not None:
+            raw = sys.stdin.read() if str(args.data) == "-" else args.data.read_text(encoding="utf-8")
+            try:
+                flags["data"] = json.loads(raw)
+            except (json.JSONDecodeError, ValueError) as ex:
+                sys.exit(f"--data is not valid JSON: {ex}")
+        entry = op_record(home, flags, args.html)
         print(json.dumps(entry, ensure_ascii=False, indent=2))
         return 0
 
     if args.cmd == "list":
         trips = op_list(home)
         if args.json:
-            print(json.dumps(trips, ensure_ascii=False, indent=2))
+            lean = [{k: v for k, v in t.items() if k != "data"} for t in trips]
+            print(json.dumps(lean, ensure_ascii=False, indent=2))
         else:
             print(render_list(trips))
             print(f"\nStore: {json_path(home)}")
+        return 0
+
+    if args.cmd == "render":
+        outp, err = op_render(home, args.id, args.out)
+        if err:
+            print(err, file=sys.stderr)
+            return 1
+        print(outp)
         return 0
 
     if args.cmd == "get":
@@ -577,6 +662,19 @@ def _selftest() -> int:
         assert op_remove(home, "турция-2026-06") is True
         assert op_get(home, "турция-2026-06") is None
         assert op_remove(home, "турция-2026-06") is False
+
+        # Cache + re-render without re-scraping (KYZ-207): record a trip with
+        # cached structured data, then regenerate its HTML from the registry.
+        tdata = extract_trip_data(template_path())
+        assert tdata and tdata.get("rows"), "template has no trip-data block"
+        op_record(home, {"id": "render-test", "destination": "Турция", "data": tdata}, None)
+        outp, err = op_render(home, "render-test", str(Path(tmp) / "rt.html"))
+        assert err is None and outp and outp.exists(), f"render failed: {err}"
+        re_extract = extract_trip_data(outp)
+        assert re_extract and len(re_extract["rows"]) == len(tdata["rows"]), "render round-trip mismatch"
+        _, err2 = op_render(home, "турция-2026-06", None)
+        assert err2 and "no cached" not in err2.lower() and "no trip" in err2.lower(), \
+            "render of a removed trip must report it's unknown"
 
     print("selftest: OK")
     return 0
