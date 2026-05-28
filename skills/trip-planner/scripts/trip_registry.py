@@ -175,6 +175,18 @@ def _strip_tags(s: str) -> str:
     return re.sub(r"<[^>]+>", "", s)
 
 
+_DEST_PREFIXES = ("Отпуск в ", "Поездка в ", "Отдых в ", "Путешествие в ", "Trip to ", "Trip: ")
+
+
+def _clean_destination(s: str) -> str:
+    """Drop common trip-title prefixes so 'Отпуск в Турции' → 'Турции'."""
+    s = (s or "").strip()
+    for p in _DEST_PREFIXES:
+        if s.lower().startswith(p.lower()):
+            return s[len(p):].strip()
+    return s
+
+
 def parse_html(path: Path) -> dict:
     """Pull what we can from a trip-planner HTML file. Never raises on bad input.
 
@@ -265,9 +277,9 @@ def _parse_legacy(text: str) -> dict:
 
     h1 = re.search(r"<h1[^>]*>(.*?)</h1>", text, re.DOTALL | re.IGNORECASE)
     if h1 and _strip_tags(h1.group(1)).strip():
-        out["destination"] = _html.unescape(_strip_tags(h1.group(1))).strip()
+        out["destination"] = _clean_destination(_html.unescape(_strip_tags(h1.group(1))))
     elif title:
-        out["destination"] = title
+        out["destination"] = _clean_destination(title)
 
     sub = re.search(r'class="subtitle"[^>]*>(.*?)</', text, re.DOTALL | re.IGNORECASE)
     if sub and _strip_tags(sub.group(1)).strip():
