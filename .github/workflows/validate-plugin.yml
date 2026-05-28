@@ -63,3 +63,8 @@ jobs:
           if failed:
               sys.exit(1)
           PY
+
+      - name: trip_registry.py self-test (stdlib-only, isolated store)
+        run: |
+          TRIP_PLANNER_HOME="$(mktemp -d)" \
+            python3 skills/trip-planner/scripts/trip_registry.py selftest

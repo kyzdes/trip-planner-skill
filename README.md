@@ -10,6 +10,7 @@ Drop your Aviasales and Ostrovok links into Claude Code and get:
 - Logistics analysis (timing conflicts, accommodation gaps, baggage mismatches)
 - XLSX export with 18 data columns
 - Mobile-friendly PDF for sharing (no prices, just the plan with clickable links)
+- **Persistent trip memory** — every itinerary is recorded to `~/.trip-planner/`, so any agent using the skill (in any later session) knows what trips you've already planned, can avoid re-planning duplicates, and can answer "what trips have I planned?" without re-scraping
 
 ## Example Output
 
@@ -82,9 +83,20 @@ Both Aviasales and Ostrovok are SPAs that return empty shells to simple HTTP req
 
 ```
 trip-planner-skill/
-├── SKILL.md              # Skill instructions + JS extractors
-├── example-output.html   # Reference HTML output
+├── skills/trip-planner/
+│   ├── SKILL.md              # Skill instructions + JS extractors + workflow
+│   ├── assets/template.html  # Reference HTML output template
+│   ├── references/           # Transfer times, etc. (progressive disclosure)
+│   └── scripts/
+│       ├── export_trip.py    # HTML → XLSX + PDF (deterministic export)
+│       └── trip_registry.py  # Persistent trip memory (recall / record)
+├── example-output.html       # Reference HTML output
 └── README.md
+
+# Trip memory (created on first use, OUTSIDE the plugin so it survives updates):
+~/.trip-planner/
+├── trips.json                # Canonical registry of planned trips
+└── trips.md                  # Human-readable mirror (auto-generated)
 ```
 
 ## License
