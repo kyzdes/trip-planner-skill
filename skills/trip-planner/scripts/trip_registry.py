@@ -174,32 +174,79 @@ def _strip_tags(s: str) -> str:
 
 
 def parse_html(path: Path) -> dict:
-    """Pull what we can from a trip-planner HTML file. Never raises on bad input."""
-    out: dict = {}
+    """Pull what we can from a trip-planner HTML file. Never raises on bad input.
+
+    Prefers the structured `<script id="trip-data">` JSON single-source-of-truth
+    block (current template); falls back to scraping the rendered table/summary
+    for older outputs generated before the JSON-SoT refactor.
+    """
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as ex:
         print(f"warning: could not read {path} ({ex}); using flags only", file=sys.stderr)
-        return out
+        return {}
 
+    m = re.search(
+        r'<script id="trip-data" type="application/json"[^>]*>(.*?)</script>',
+        text, re.DOTALL | re.IGNORECASE,
+    )
+    if m:
+        try:
+            return _parse_from_json(json.loads(m.group(1)))
+        except (json.JSONDecodeError, ValueError):
+            pass  # malformed JSON → fall back to scraping
+    return _parse_legacy(text)
+
+
+def _split_subtitle(subtitle: str) -> dict:
+    out: dict = {}
+    clean = _html.unescape(_strip_tags(subtitle)).strip()
+    parts = [p.strip() for p in clean.split("·") if p.strip()]
+    if parts:
+        out["dates"] = parts[0]
+    route = next((p for p in parts if "→" in p), None)
+    if route:
+        out["route"] = route
+    return out
+
+
+def _parse_from_json(data: dict) -> dict:
+    out: dict = {}
+    meta = data.get("meta", {}) or {}
+    dest = meta.get("destination") or meta.get("h1")
+    if dest:
+        out["destination"] = _html.unescape(_strip_tags(dest)).strip()
+    if meta.get("subtitle"):
+        out.update(_split_subtitle(meta["subtitle"]))
+    summary = data.get("summary") or []
+    if summary and summary[0].get("value"):
+        out["total"] = _html.unescape(_strip_tags(str(summary[0]["value"]))).strip()
+    elif (data.get("totals") or {}).get("total") is not None:
+        out["total"] = str(data["totals"]["total"])
+    rows = data.get("rows") or []
+    flights = sum(1 for r in rows if r.get("type") == "flight")
+    hotels = sum(1 for r in rows if r.get("type") == "hotel")
+    if flights:
+        out["flights"] = flights
+    if hotels:
+        out["hotels"] = hotels
+    return out
+
+
+def _parse_legacy(text: str) -> dict:
+    out: dict = {}
     m = re.search(r"<title>(.*?)</title>", text, re.DOTALL | re.IGNORECASE)
     title = _html.unescape(m.group(1)).strip() if m else None
 
     h1 = re.search(r"<h1[^>]*>(.*?)</h1>", text, re.DOTALL | re.IGNORECASE)
-    if h1:
+    if h1 and _strip_tags(h1.group(1)).strip():
         out["destination"] = _html.unescape(_strip_tags(h1.group(1))).strip()
     elif title:
         out["destination"] = title
 
     sub = re.search(r'class="subtitle"[^>]*>(.*?)</', text, re.DOTALL | re.IGNORECASE)
-    if sub:
-        clean = _html.unescape(_strip_tags(sub.group(1))).strip()
-        parts = [p.strip() for p in clean.split("·") if p.strip()]
-        if parts:
-            out["dates"] = parts[0]
-        route = next((p for p in parts if "→" in p), None)
-        if route:
-            out["route"] = route
+    if sub and _strip_tags(sub.group(1)).strip():
+        out.update(_split_subtitle(sub.group(1)))
 
     val = re.search(r'class="summary-value"[^>]*>(.*?)</', text, re.DOTALL | re.IGNORECASE)
     if val:

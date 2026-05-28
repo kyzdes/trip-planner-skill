@@ -192,6 +192,19 @@ Save to `~/Desktop/trip_[destination]_[dates].html`. The file must be **self-con
 
 **Reference template:** `assets/template.html` in this skill. Copy its structure verbatim, then fill in trip-specific data. Don't redesign the CSS from scratch each time.
 
+### Single source of truth: the `trip-data` JSON block
+
+The template is data-driven. **Edit only the `<script id="trip-data" type="application/json">` block** — the route table, the summary card, the notes list, and both export buttons (XLSX, PDF) are all rendered from it by the page's JS. Do **not** hand-write `<tr>` rows or duplicate values into the XLSX/PDF functions; that's the old 4-section duplication that caused drift (KI-11). Change a date once, in the JSON, and every view updates.
+
+JSON shape (see the template for the full example):
+
+- `meta` — `title`, `h1`, `destination`, `subtitle`, `updated`, `xlsxFile`, `pdfTitle`, `pdfH1`, `pdfSubtitle`, `pdfNotes[]`.
+- `rows[]` — one object per itinerary line: `type` (`flight`/`hotel`/`transfer`), `date`, `dateNote`, `title`, `sub`, `time`, `timeNote`, `details`, `detailsNote`, `rating` (`{ta, taReviews, taReviewsNum, ostrovok, taUrl}` or omit), `price`, `priceNum`, `links[]` (`{label, url}`), `x{}` (XLSX-only columns: `date, route, duration, operator, klass, meal, cancel, baggage`), and PDF helpers `day` (header on the first row of a day), `pdfTitle`, `pdfTime`, `pdfDetails`.
+- `summary[]` — `{value, label}` cards. `totals` — `{flights, hotels, total}` numbers (XLSX subtotal rows). Keep `priceNum`s consistent with `totals` (they should sum up).
+- `notes[]` — HTML strings.
+
+Because the table is rendered client-side, the trip data also lives in this JSON for tooling: `trip_registry.py` and `export_trip.py` read the `trip-data` block directly (with a fallback to scraping older, pre-refactor outputs).
+
 ### Auto-compute weekdays — don't guess
 
 For each date, compute the weekday from the date itself instead of hand-mapping:
