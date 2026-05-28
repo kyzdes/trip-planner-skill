@@ -50,6 +50,7 @@ What to do with it:
 - **History questions** ("какие поездки я уже планировал?", "покажи прошлые маршруты") — answer straight from the registry; no scraping needed.
 - **Duplicate detection** — if the user's new request matches an existing trip (same destination + overlapping dates), say so and offer to **update that trip** (reuse its `html_path`, re-run the relevant steps) instead of starting from scratch.
 - **Context** — past origins, airlines, and notes are useful priors ("last Turkey trip you flew Aeroflot MOW→IST").
+- **Status** — each trip has a `status`: `planned` (default), `booked` (committed — be careful suggesting changes), or `archived` (past/closed — de-emphasise; don't surface unless asked). Set it with `trip_registry.py status --id <id> --set booked|archived`. Archived trips sort last in the registry.
 
 If the file doesn't exist, there's no history yet — proceed silently to Step 0. The store is shared across **all** agents and sessions and persists on disk (see **Memory store** below).
 
@@ -327,7 +328,7 @@ Where the recalled/recorded data lives:
 python3 "${CLAUDE_SKILL_DIR:-skills/trip-planner}/scripts/trip_registry.py" render --id turkey-2026-06 --out ~/Desktop/trip_turkey_2026-06.html
 ```
 
-Other commands: `list` (human table or `--json`), `get --id <id>`, `remove --id <id>`, `render --id <id> [--out <path>]`.
+Other commands: `list` (human table or `--json`), `get --id <id>`, `remove --id <id>`, `render --id <id> [--out <path>]`, `status --id <id> --set planned|booked|archived`.
 
 ---
 
