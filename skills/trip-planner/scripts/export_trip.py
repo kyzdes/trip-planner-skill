@@ -19,6 +19,8 @@ Requirements:
 from __future__ import annotations
 
 import argparse
+import html as _html
+import json
 import re
 import shutil
 import subprocess
@@ -46,8 +48,49 @@ ROW_COLOURS = {
 }
 
 
+TYPE_LABEL = {"flight": "Перелёт", "hotel": "Отель", "transfer": "Трансфер"}
+
+
 def parse_trip_html(html_path: Path) -> tuple[str, list[dict]]:
-    soup = BeautifulSoup(html_path.read_text(encoding="utf-8"), "html.parser")
+    """Return (title, rows). Prefers the structured `<script id="trip-data">`
+    JSON single-source-of-truth block; falls back to scraping the rendered
+    table for outputs generated before the JSON-SoT refactor."""
+    text = html_path.read_text(encoding="utf-8")
+    m = re.search(r'<script id="trip-data" type="application/json"[^>]*>(.*?)</script>',
+                  text, re.DOTALL | re.IGNORECASE)
+    if m:
+        try:
+            return _rows_from_json(json.loads(m.group(1)))
+        except (json.JSONDecodeError, ValueError):
+            pass  # malformed → fall back to scraping the table
+    return _rows_from_table(text)
+
+
+def _flat(s: str) -> str:
+    return _html.unescape(re.sub(r"<[^>]+>", " ", s or "")).replace("\n", " ").strip()
+
+
+def _rows_from_json(data: dict) -> tuple[str, list[dict]]:
+    title = _html.unescape((data.get("meta", {}) or {}).get("title") or "Trip").strip()
+    rows = []
+    for i, r in enumerate(data.get("rows", []), 1):
+        rating = "—"
+        if r.get("rating"):
+            rt = r["rating"]
+            rating = f"TA {rt.get('ta', '')}/5, {_flat(rt.get('taReviews', ''))}, Ostrovok {rt.get('ostrovok', '')}"
+        date = _flat(r.get("date", "")) + (f" ({_flat(r.get('dateNote'))})" if r.get("dateNote") else "")
+        desc = _flat(r.get("title", "")) + (f" — {_flat(r.get('sub'))}" if r.get("sub") else "")
+        time = _flat(r.get("time", "")) + (f" ({_flat(r.get('timeNote'))})" if r.get("timeNote") else "")
+        details = _flat(r.get("details", "")) + (f" {_flat(r.get('detailsNote'))}" if r.get("detailsNote") else "")
+        cells = [str(i), TYPE_LABEL.get(r.get("type"), r.get("type", "")), date, desc,
+                 time.strip(), details.strip(), rating, _flat(r.get("price", "")) or "—", ""]
+        links = [l.get("url", "") for l in (r.get("links") or [])]
+        rows.append({"kind": f"type-{r.get('type')}", "cells": cells, "links": links})
+    return title, rows
+
+
+def _rows_from_table(text: str) -> tuple[str, list[dict]]:
+    soup = BeautifulSoup(text, "html.parser")
     title = (soup.title.string or "Trip").strip() if soup.title else "Trip"
 
     table = soup.find("table", id="tripTable")
