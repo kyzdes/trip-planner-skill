@@ -45,6 +45,7 @@ except ImportError:  # pragma: no cover
     fcntl = None
 
 SCHEMA_VERSION = 1
+STATUSES = ("planned", "booked", "archived")
 
 # Entry field order — also the order rendered in trips.md / shown by `get`.
 FIELDS = [
@@ -150,8 +151,9 @@ def derive_id(destination: str | None, start: str | None) -> str:
 
 
 def sort_key(t: dict):
-    """Most-recent first; entries without a start date sort last."""
-    return (t.get("start") or "", t.get("updated_at") or "")
+    """Active trips first (most-recent by start), archived trips last."""
+    active = 0 if t.get("status") == "archived" else 1
+    return (active, t.get("start") or "", t.get("updated_at") or "")
 
 
 def _days_between(start: str | None, end: str | None) -> int | None:
@@ -381,6 +383,19 @@ def op_remove(home: Path, tid: str) -> bool:
         return True
 
 
+def op_set_status(home: Path, tid: str, status: str) -> dict | None:
+    """Set a trip's lifecycle status (planned/booked/archived)."""
+    with _lock(home):
+        data = load(home)
+        entry = next((t for t in data["trips"] if t.get("id") == tid), None)
+        if entry is None:
+            return None
+        entry["status"] = status
+        entry["updated_at"] = now_iso()
+        save(home, data)
+        return entry
+
+
 def op_list(home: Path) -> list[dict]:
     return sorted(load(home)["trips"], key=sort_key, reverse=True)
 
@@ -437,7 +452,9 @@ def render_md(data: dict) -> str:
 
     for t in trips:
         head = " — ".join(x for x in (t.get("destination"), t.get("dates")) if x) or t["id"]
-        lines.append(f"## {head}")
+        st = t.get("status")
+        tag = f"  ·  {st.upper()}" if st and st != "planned" else ""
+        lines.append(f"## {head}{tag}")
         meta = []
         if t.get("status"):
             meta.append(f"**Status:** {t['status']}")
@@ -512,7 +529,7 @@ def _add_record_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument("--hotels", type=int)
     p.add_argument("--total", help="e.g. '≈316 047 ₽'")
     p.add_argument("--currency")
-    p.add_argument("--status", help="planned | booked | archived (default: planned)")
+    p.add_argument("--status", choices=STATUSES, help="planned | booked | archived (default: planned)")
     p.add_argument("--html-path", dest="html_path", help="Path to the trip HTML on disk")
     p.add_argument("--deploy-url", dest="deploy_url")
     p.add_argument("--notes")
@@ -549,6 +566,11 @@ def main(argv=None) -> int:
     prn.add_argument("--id", required=True)
     prn.add_argument("--out", help="Output HTML path (default: the trip's html_path)")
 
+    pst = sub.add_parser("status", help="Set a trip's lifecycle status")
+    pst.add_argument("--id", required=True)
+    pst.add_argument("--set", required=True, choices=STATUSES, dest="status",
+                     help="planned | booked | archived")
+
     sub.add_parser("selftest", help="CI smoke test (uses a temp store)")
 
     args = parser.parse_args(argv)
@@ -582,6 +604,14 @@ def main(argv=None) -> int:
             print(err, file=sys.stderr)
             return 1
         print(outp)
+        return 0
+
+    if args.cmd == "status":
+        entry = op_set_status(home, args.id, args.status)
+        if entry is None:
+            print(f"No trip with id {args.id!r}", file=sys.stderr)
+            return 1
+        print(f"{args.id} → {args.status}")
         return 0
 
     if args.cmd == "get":
@@ -658,6 +688,15 @@ def _selftest() -> int:
         assert e3["id"] == "турция-2026-06-2", e3["id"]
         assert len(op_list(home)) == 2, "collision must add, not overwrite"
         assert op_remove(home, "турция-2026-06-2") is True
+
+        # Status lifecycle (KYZ-208): set status; archived sorts last.
+        assert op_set_status(home, "турция-2026-06", "booked")["status"] == "booked"
+        assert op_set_status(home, "nope", "archived") is None
+        op_record(home, {"id": "active-trip", "destination": "Активный", "start": "2027-01-01"}, None)
+        op_set_status(home, "турция-2026-06", "archived")
+        order = [t["id"] for t in op_list(home)]
+        assert order[-1] == "турция-2026-06", f"archived must sort last: {order}"
+        assert op_remove(home, "active-trip") is True
 
         assert op_remove(home, "турция-2026-06") is True
         assert op_get(home, "турция-2026-06") is None

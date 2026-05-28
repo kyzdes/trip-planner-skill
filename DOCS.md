@@ -374,6 +374,7 @@ cp -r trip-planner-skill ~/.claude/skills/trip-planner
 | `get --id ID [--json]` | Одна поездка (включая `data`). |
 | `remove --id ID` | Удалить поездку. |
 | `render --id ID [--out PATH]` | Перегенерировать HTML поездки из кэшированного `data` — **без повторного скрейпинга**. Требует, чтобы поездка была записана из JSON-SoT HTML (или с `--data`). |
+| `status --id ID --set S` | Задать жизненный цикл: `planned` / `booked` / `archived`. Archived сортируются последними; recall их де-приоритизирует. |
 | `selftest` | CI-смоук: record → list → get → update → collision → render → remove во временном сторе. |
 
 ### Поля записи
