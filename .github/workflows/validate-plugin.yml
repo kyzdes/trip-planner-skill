@@ -63,3 +63,14 @@ jobs:
           if failed:
               sys.exit(1)
           PY
+
+      - name: trip_registry.py self-test (stdlib-only, isolated store)
+        run: |
+          TRIP_PLANNER_HOME="$(mktemp -d)" \
+            python3 skills/trip-planner/scripts/trip_registry.py selftest
+
+      - name: parse_html fixture tests (JSON path + legacy fallback)
+        run: python3 skills/trip-planner/scripts/test_parse_html.py
+
+      - name: parse_tstring decoder self-test (real + synthetic samples)
+        run: python3 skills/trip-planner/scripts/parse_tstring.py selftest
