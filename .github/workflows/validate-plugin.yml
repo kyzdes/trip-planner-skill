@@ -68,3 +68,6 @@ jobs:
         run: |
           TRIP_PLANNER_HOME="$(mktemp -d)" \
             python3 skills/trip-planner/scripts/trip_registry.py selftest
+
+      - name: parse_html fixture tests (JSON path + legacy fallback)
+        run: python3 skills/trip-planner/scripts/test_parse_html.py
