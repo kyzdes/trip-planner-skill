@@ -408,8 +408,47 @@ def op_set_status(home: Path, tid: str, status: str) -> dict | None:
         return entry
 
 
-def op_list(home: Path) -> list[dict]:
-    return sorted(load(home)["trips"], key=sort_key, reverse=True)
+def op_merge(home: Path, target_id: str, source_ids: list[str]) -> tuple[dict | None, str | None]:
+    """Fill the target's empty fields from the sources, then delete the sources.
+
+    The target's own set values always win; only gaps are filled. `created_at`
+    becomes the earliest across all merged trips.
+    """
+    if target_id in source_ids:
+        return None, "a trip can't be merged into itself"
+    with _lock(home):
+        data = load(home)
+        trips = data["trips"]
+        target = next((t for t in trips if t.get("id") == target_id), None)
+        if target is None:
+            return None, f"no target trip with id {target_id!r}"
+        srcs = []
+        for sid in source_ids:
+            s = next((t for t in trips if t.get("id") == sid), None)
+            if s is None:
+                return None, f"no source trip with id {sid!r}"
+            srcs.append(s)
+        for src in srcs:
+            for k, v in src.items():
+                if k in ("id", "created_at", "updated_at"):
+                    continue
+                if target.get(k) in (None, "") and v not in (None, ""):
+                    target[k] = v
+            c = src.get("created_at")
+            if c and (not target.get("created_at") or c < target["created_at"]):
+                target["created_at"] = c
+        target["updated_at"] = now_iso()
+        drop = set(source_ids)
+        data["trips"] = [t for t in trips if t.get("id") == target_id or t.get("id") not in drop]
+        save(home, data)
+        return target, None
+
+
+def op_list(home: Path, status: str | None = None) -> list[dict]:
+    trips = load(home)["trips"]
+    if status:
+        trips = [t for t in trips if t.get("status") == status]
+    return sorted(trips, key=sort_key, reverse=True)
 
 
 def op_render(home: Path, tid: str, out: str | None) -> tuple[Path | None, str | None]:
@@ -566,6 +605,7 @@ def main(argv=None) -> int:
 
     pl = sub.add_parser("list", help="List all recorded trips")
     pl.add_argument("--json", action="store_true")
+    pl.add_argument("--status", choices=STATUSES, help="filter by status")
 
     pg = sub.add_parser("get", help="Show one trip")
     pg.add_argument("--id", required=True)
@@ -582,6 +622,11 @@ def main(argv=None) -> int:
     pst.add_argument("--id", required=True)
     pst.add_argument("--set", required=True, choices=STATUSES, dest="status",
                      help="planned | booked | archived")
+
+    pmg = sub.add_parser("merge", help="Fill a trip's gaps from others, then delete those others")
+    pmg.add_argument("--into", required=True, help="Target trip id (kept)")
+    pmg.add_argument("--from", required=True, action="append", dest="sources",
+                     metavar="ID", help="Source trip id to merge in and delete (repeatable)")
 
     sub.add_parser("selftest", help="CI smoke test (uses a temp store)")
 
@@ -601,7 +646,7 @@ def main(argv=None) -> int:
         return 0
 
     if args.cmd == "list":
-        trips = op_list(home)
+        trips = op_list(home, getattr(args, "status", None))
         if args.json:
             lean = [{k: v for k, v in t.items() if k != "data"} for t in trips]
             print(json.dumps(lean, ensure_ascii=False, indent=2))
@@ -624,6 +669,15 @@ def main(argv=None) -> int:
             print(f"No trip with id {args.id!r}", file=sys.stderr)
             return 1
         print(f"{args.id} → {args.status}")
+        return 0
+
+    if args.cmd == "merge":
+        entry, err = op_merge(home, args.into, args.sources)
+        if err:
+            print(err, file=sys.stderr)
+            return 1
+        lean = {k: v for k, v in entry.items() if k != "data"}
+        print(json.dumps(lean, ensure_ascii=False, indent=2))
         return 0
 
     if args.cmd == "get":
@@ -709,6 +763,20 @@ def _selftest() -> int:
         order = [t["id"] for t in op_list(home)]
         assert order[-1] == "турция-2026-06", f"archived must sort last: {order}"
         assert op_remove(home, "active-trip") is True
+
+        # Merge + list --status filter (KYZ-216).
+        op_record(home, {"id": "mg-a", "destination": "Мерж", "start": "2027-05-01", "total": "100"}, None)
+        op_record(home, {"id": "mg-b", "destination": "Мерж", "start": "2027-05-01", "notes": "extra"}, None)
+        merged, m_err = op_merge(home, "mg-a", ["mg-b"])
+        assert m_err is None and merged["notes"] == "extra", (m_err, merged)
+        assert merged["total"] == "100", "target's own values are kept"
+        assert op_get(home, "mg-b") is None, "merged source must be removed"
+        _, self_err = op_merge(home, "mg-a", ["mg-a"])
+        assert self_err, "self-merge must error"
+        op_set_status(home, "mg-a", "booked")
+        assert [t["id"] for t in op_list(home, "booked")] == ["mg-a"], "list --status booked"
+        assert "турция-2026-06" in [t["id"] for t in op_list(home, "archived")], "list --status archived"
+        assert op_remove(home, "mg-a") is True
 
         assert op_remove(home, "турция-2026-06") is True
         assert op_get(home, "турция-2026-06") is None
