@@ -209,8 +209,14 @@ JSON shape (see the template for the full example):
 
 - `meta` — `title`, `h1`, `destination`, `subtitle`, `updated`, `xlsxFile`, `pdfTitle`, `pdfH1`, `pdfSubtitle`, `pdfNotes[]`.
 - `rows[]` — one object per itinerary line: `type` (`flight`/`hotel`/`transfer`), `date`, `dateNote`, `title`, `sub`, `time`, `timeNote`, `details`, `detailsNote`, `rating` (`{ta, taReviews, taReviewsNum, ostrovok, taUrl}` or omit), `price`, `priceNum`, `links[]` (`{label, url}`), `x{}` (XLSX-only columns: `date, route, duration, operator, klass, meal, cancel, baggage`), and PDF helpers `day` (header on the first row of a day), `pdfTitle`, `pdfTime`, `pdfDetails`.
-- `summary[]` — `{value, label}` cards. `totals` — `{flights, hotels, total}` numbers (XLSX subtotal rows). Keep `priceNum`s consistent with `totals` (they should sum up).
+- `summary[]` — `{value, label}` cards (add `rub` as a number to make a card convertible by the currency toggle). `totals` — `{flights, hotels, total}` numbers (XLSX subtotal rows). Keep `priceNum`s consistent with `totals` (they should sum up).
 - `notes[]` — HTML strings.
+
+**Optional compare / currency fields (all off by default — omit them and the output is unchanged):**
+
+- `rows[].alternatives[]` — `{operator, time, price, note}` other flight options for that leg; rendered as muted sub-lines under the chosen flight (KYZ-211). Use when presenting 2-3 options for the user to pick (D-08).
+- top-level `variants[]` — `{label, total, nights, note}` whole-route options; rendered as stacked summary cards ("Вариант А / Б") (KYZ-212).
+- `meta.fx` — `{EUR: <eur_per_rub>, USD: …}` with **live** rates fetched at generation time; adds a currency toggle that recomputes prices from each `priceNum` / summary `rub` (KYZ-213). Omit if you don't have current rates.
 
 Because the table is rendered client-side, the trip data also lives in this JSON for tooling: `trip_registry.py` and `export_trip.py` read the `trip-data` block directly (with a fallback to scraping older, pre-refactor outputs).
 

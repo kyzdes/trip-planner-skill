@@ -74,3 +74,6 @@ jobs:
 
       - name: parse_tstring decoder self-test (real + synthetic samples)
         run: python3 skills/trip-planner/scripts/parse_tstring.py selftest
+
+      - name: template render/build smoke test (JSON-SoT + compare/currency)
+        run: node skills/trip-planner/scripts/test_template.js
