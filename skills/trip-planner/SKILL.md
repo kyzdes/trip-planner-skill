@@ -115,6 +115,14 @@ Aviasales is an SPA. `WebFetch` only returns shell HTML. Two phases:
 
 `WebFetch` on the `avs.io` link returns a 301 with the full `aviasales.ru` URL. Parse `expected_price` and route info from URL params — this gives you a price hint before opening a browser. Compare it later with the real ticket price; if they diverge by >15%, mention it to the user.
 
+**Decode the `t=` param for segment times + layovers (no browser).** The redirect URL's `t=` string encodes every segment (`[airline][dep unix][arr unix][flight][orig][dest]`). Run the bundled decoder to get departure/arrival times and connection durations for multi-leg flights without opening the page:
+
+```bash
+python3 "${CLAUDE_SKILL_DIR:-skills/trip-planner}/scripts/parse_tstring.py" "<aviasales URL or t-string>"
+```
+
+It returns `segments` (UTC times, duration) and `layovers` (`is_layover` = gap < 24h at a shared airport — distinguishes a real connection from a round-trip's two directions). Use it to fill layover durations in the table without a browser round-trip.
+
 ### Phase B — Full data from browser
 
 1. Navigate the link with `mcp__claude-in-chrome__navigate` (batch with the next JS-extract via `browser_batch` if you can).

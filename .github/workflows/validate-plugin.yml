@@ -71,3 +71,6 @@ jobs:
 
       - name: parse_html fixture tests (JSON path + legacy fallback)
         run: python3 skills/trip-planner/scripts/test_parse_html.py
+
+      - name: parse_tstring decoder self-test (real + synthetic samples)
+        run: python3 skills/trip-planner/scripts/parse_tstring.py selftest
