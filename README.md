@@ -28,18 +28,22 @@ The skill generates a self-contained HTML file like `example-output.html` includ
 
 ## Installation
 
-### Option 1: Symlink (recommended)
+### Option 1: Plugin marketplace (recommended)
 
-```bash
-git clone https://github.com/kuzds/trip-planner-skill.git
-ln -s "$(pwd)/trip-planner-skill" ~/.claude/skills/trip-planner
+The skill ships as a Claude Code plugin via the `kyzdes/claude-skills` marketplace. In Claude Code:
+
+```
+/plugin marketplace add kyzdes/claude-skills
+/plugin install trip-planner@claude-skills
 ```
 
-### Option 2: Copy
+It then auto-updates on session start. Restart Claude Code (or `/reload-plugins`) after the first install.
+
+### Option 2: Manual (development)
 
 ```bash
 git clone https://github.com/kuzds/trip-planner-skill.git
-cp -r trip-planner-skill ~/.claude/skills/trip-planner
+ln -s "$(pwd)/trip-planner-skill/skills/trip-planner" ~/.claude/skills/trip-planner
 ```
 
 ## Requirements
