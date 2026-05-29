@@ -180,6 +180,22 @@ Claude Code скилл, который:
 - `break-inside: avoid` для корректной печати
 - Автозапуск `window.print()` через 400мс
 
+### 2.8 Память о поездках
+
+#### FR-15: Персистентный реестр поездок
+**Приоритет:** P1
+- Скилл помнит каждую сгенерированную поездку **между сессиями и агентами** — стор вне каталога плагина: `~/.trip-planner/` (override `$TRIP_PLANNER_HOME`), переживает `claude plugin update`.
+- **Recall** (перед Step 0): любой агент читает реестр, отвечает на вопросы об истории, детектирует дубликаты, де-приоритизирует `archived`.
+- **Record** (Step 9): после генерации HTML поездка пишется в реестр (idempotent upsert по `id`; авто-захват полей и структурного `trip-data` из HTML).
+- `trips.json` — canonical (single-writer `trip_registry.py`, atomic + `flock`); `trips.md` — авто-генерируемое человекочитаемое зеркало.
+- Команды: `record`, `list [--status]`, `get`, `remove`, `render` (re-emit HTML из кэша без рескрейпинга), `status`, `merge`. Stdlib-only.
+- Жизненный цикл: `planned` → `booked` → `archived`.
+
+#### FR-16: Структурный single-source-of-truth в HTML
+**Приоритет:** P2
+- Данные поездки живут в одном `<script id="trip-data" type="application/json">` блоке; таблица, summary, notes, XLSX и PDF рендерятся из него (устраняет рассинхрон 4 секций).
+- Редактирование одной даты/отеля не требует рескрейпинга: правка JSON-блока (или `render` из реестра) обновляет все представления.
+
 ---
 
 ## 3. Нефункциональные требования

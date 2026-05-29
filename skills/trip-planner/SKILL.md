@@ -1,6 +1,6 @@
 ---
 name: trip-planner
-description: "Extract flight and hotel data from Aviasales and Ostrovok, compile into a polished travel itinerary with XLSX/PDF export. Use this skill whenever the user shares avs.io or aviasales.ru links, corp.ostrovok.ru hotel links, or discusses planning a trip — even if they just paste links without explanation. Also triggers on Russian travel terms: отпуск, поездка, перелёт, отель, бронирование, маршрут. Handles multi-leg itineraries, logistics analysis, price tracking, TripAdvisor ratings, hotel search by city when no URL is given, airline-specific filtering (e.g. 'только Oman Air'), and optional Vercel deploy of the resulting HTML."
+description: "Build travel itineraries from Aviasales and Ostrovok — extract flight/hotel data and compile a self-contained HTML with XLSX/PDF export and optional Vercel deploy. Triggers on avs.io / aviasales.ru / corp.ostrovok.ru links (even pasted without explanation), on Russian travel terms (отпуск, поездка, перелёт, отель, бронирование, маршрут), and on planning a trip with dates/destinations. Also remembers previously planned trips across sessions in ~/.trip-planner/ (recall past trips first, record each when done), so it triggers on 'какие поездки я уже планировал', 'покажи прошлые маршруты', 'what trips have I planned'."
 ---
 
 # Trip Planner
@@ -18,6 +18,7 @@ Build travel itineraries from Aviasales and Ostrovok. The job: take raw input (U
 ## Workflow at a glance
 
 ```
+Recall  → Load past-trip memory (run before Step 0; see "Recall" below)
 Step 0  → Browser readiness check (do NOT skip)
 Step 1  → Parse user input (URLs, text, screenshots)
 Step 2  → Extract flight data (Aviasales, two-phase)
@@ -28,15 +29,36 @@ Step 6  → Generate self-contained HTML (use assets/template.html)
 Step 6.5→ Optional: Python export (XLSX + PDF) via scripts/export_trip.py
 Step 7  → Present results to user
 Step 8  → Optional: deploy to Vercel
+Step 9  → Record the trip to memory (scripts/trip_registry.py)
 ```
 
 Use `mcp__claude-in-chrome__browser_batch` whenever the next 2+ steps are independent navigates/JS-calls. Batched round-trips are ~3–5× faster than sequential.
 
 ---
 
+## Recall: past trips (run this first)
+
+This skill has a persistent memory of every trip it has planned. **Before** the browser check — recall has no browser dependency, and it answers pure history questions on its own — read the trip registry:
+
+```bash
+# honours $TRIP_PLANNER_HOME; defaults to ~/.trip-planner
+cat "${TRIP_PLANNER_HOME:-$HOME/.trip-planner}/trips.json" 2>/dev/null || echo "no trips yet"
+```
+
+What to do with it:
+
+- **History questions** ("какие поездки я уже планировал?", "покажи прошлые маршруты") — answer straight from the registry; no scraping needed.
+- **Duplicate detection** — if the user's new request matches an existing trip (same destination + overlapping dates), say so and offer to **update that trip** (reuse its `html_path`, re-run the relevant steps) instead of starting from scratch.
+- **Context** — past origins, airlines, and notes are useful priors ("last Turkey trip you flew Aeroflot MOW→IST").
+- **Status** — each trip has a `status`: `planned` (default), `booked` (committed — be careful suggesting changes), or `archived` (past/closed — de-emphasise; don't surface unless asked). Set it with `trip_registry.py status --id <id> --set booked|archived`. Archived trips sort last in the registry.
+
+If the file doesn't exist, there's no history yet — proceed silently to Step 0. The store is shared across **all** agents and sessions and persists on disk (see **Memory store** below).
+
+---
+
 ## Step 0: Browser readiness check
 
-Before anything else, call `mcp__claude-in-chrome__tabs_context_mcp` with `createIfEmpty: true`. This serves three purposes:
+Once you've recalled past trips (above) and the task needs scraping, **this is the first browser action** — call `mcp__claude-in-chrome__tabs_context_mcp` with `createIfEmpty: true` before any navigate/extract. This serves three purposes:
 
 1. **Verifies the Claude-in-Chrome MCP is alive.** If the call errors, the user's extension is disconnected. Don't loop — tell them once: *"Чтобы продолжить, переподключи расширение Claude in Chrome (значок в правом верхнем углу браузера)."* Then stop and wait.
 2. **Gives you a valid `tabId`** for the rest of the session. Reuse it; never invent IDs.
@@ -92,6 +114,14 @@ Aviasales is an SPA. `WebFetch` only returns shell HTML. Two phases:
 ### Phase A — Quick data from redirect URL
 
 `WebFetch` on the `avs.io` link returns a 301 with the full `aviasales.ru` URL. Parse `expected_price` and route info from URL params — this gives you a price hint before opening a browser. Compare it later with the real ticket price; if they diverge by >15%, mention it to the user.
+
+**Decode the `t=` param for segment times + layovers (no browser).** The redirect URL's `t=` string encodes every segment (`[airline][dep unix][arr unix][flight][orig][dest]`). Run the bundled decoder to get departure/arrival times and connection durations for multi-leg flights without opening the page:
+
+```bash
+python3 "${CLAUDE_SKILL_DIR:-skills/trip-planner}/scripts/parse_tstring.py" "<aviasales URL or t-string>"
+```
+
+It returns `segments` (UTC times, duration) and `layovers` (`is_layover` = gap < 24h at a shared airport — distinguishes a real connection from a round-trip's two directions). Use it to fill layover durations in the table without a browser round-trip.
 
 ### Phase B — Full data from browser
 
@@ -171,6 +201,19 @@ Save to `~/Desktop/trip_[destination]_[dates].html`. The file must be **self-con
 
 **Reference template:** `assets/template.html` in this skill. Copy its structure verbatim, then fill in trip-specific data. Don't redesign the CSS from scratch each time.
 
+### Single source of truth: the `trip-data` JSON block
+
+The template is data-driven. **Edit only the `<script id="trip-data" type="application/json">` block** — the route table, the summary card, the notes list, and both export buttons (XLSX, PDF) are all rendered from it by the page's JS. Do **not** hand-write `<tr>` rows or duplicate values into the XLSX/PDF functions; that's the old 4-section duplication that caused drift (KI-11). Change a date once, in the JSON, and every view updates.
+
+JSON shape (see the template for the full example):
+
+- `meta` — `title`, `h1`, `destination`, `subtitle`, `updated`, `xlsxFile`, `pdfTitle`, `pdfH1`, `pdfSubtitle`, `pdfNotes[]`.
+- `rows[]` — one object per itinerary line: `type` (`flight`/`hotel`/`transfer`), `date`, `dateNote`, `title`, `sub`, `time`, `timeNote`, `details`, `detailsNote`, `rating` (`{ta, taReviews, taReviewsNum, ostrovok, taUrl}` or omit), `price`, `priceNum`, `links[]` (`{label, url}`), `x{}` (XLSX-only columns: `date, route, duration, operator, klass, meal, cancel, baggage`), and PDF helpers `day` (header on the first row of a day), `pdfTitle`, `pdfTime`, `pdfDetails`.
+- `summary[]` — `{value, label}` cards. `totals` — `{flights, hotels, total}` numbers (XLSX subtotal rows). Keep `priceNum`s consistent with `totals` (they should sum up).
+- `notes[]` — HTML strings.
+
+Because the table is rendered client-side, the trip data also lives in this JSON for tooling: `trip_registry.py` and `export_trip.py` read the `trip-data` block directly (with a fallback to scraping older, pre-refactor outputs).
+
 ### Auto-compute weekdays — don't guess
 
 For each date, compute the weekday from the date itself instead of hand-mapping:
@@ -212,7 +255,7 @@ Opens a new window with mobile-optimized card layout (max-width 420px), grouped 
 If the user wants the XLSX and PDF as files on disk without clicking buttons, run `scripts/export_trip.py`:
 
 ```bash
-python3 skills/trip-planner/scripts/export_trip.py \
+python3 "${CLAUDE_SKILL_DIR:-skills/trip-planner}/scripts/export_trip.py" \
     --html ~/Desktop/trip_destination_dates.html \
     --out-dir ~/Desktop/
 ```
@@ -250,6 +293,50 @@ npx -y vercel@latest deploy --prod --yes
 Vercel returns both a project alias (e.g. `https://<project>.vercel.app`) and a deployment URL. Use the project alias — it's stable and shorter. Verify it returns 200 before reporting success.
 
 If the user is not logged in, `vercel whoami` will tell you. They'll need to run `vercel login` themselves (interactive).
+
+---
+
+## Step 9: Record the trip to memory
+
+Once the HTML exists (Step 6) and you've presented it (Step 7), write the trip to the persistent registry so future agents recall it. Pass `--html` to auto-fill what can be parsed (destination, route, dates, total, flight/hotel counts) and add explicit flags for the rest:
+
+```bash
+python3 "${CLAUDE_SKILL_DIR:-skills/trip-planner}/scripts/trip_registry.py" record \
+    --html ~/Desktop/trip_turkey_2026-06.html \
+    --destination "Турция" --dates "20–29 июня 2026" \
+    --start 2026-06-20 --end 2026-06-29 \
+    --route "MOW → IST → NAV → DLM → VKO" --pax 2 \
+    --total "≈316 047 ₽" \
+    --notes "1 место багажа на двоих на DLM→VKO; Cave Suites Adult Only +12"
+```
+
+Rules:
+
+- **Idempotent upsert by `--id`.** Omit `--id` and it's derived from destination + start month (`турция-2026-06`). Re-running with the same id updates the entry — it never duplicates and `created_at` is preserved.
+- **After a Vercel deploy (Step 8)**, re-run `record` with the same id plus `--deploy-url https://<project>.vercel.app` to attach the public link.
+- **Updating an existing trip** (the duplicate case from Recall) — record with the same id; only the fields you pass change.
+- Explicit flags always override values parsed from `--html`.
+
+> Path note: `${CLAUDE_SKILL_DIR}` is the absolute path to **this skill's** directory, set by Claude Code regardless of the current working directory — it's the portable way to call bundled scripts (works the same whether the skill is installed as a plugin or run from the repo). The `:-skills/trip-planner` fallback covers running from the repo root in development. Use this same form for `export_trip.py` (Step 6.5). Do **not** use `${CLAUDE_PLUGIN_ROOT}` here — that points at the plugin root, not the skill subdirectory.
+
+---
+
+## Memory store
+
+Where the recalled/recorded data lives:
+
+- **Location:** `~/.trip-planner/` by default; override with `$TRIP_PLANNER_HOME`.
+- **Files:** `trips.json` (canonical, machine-managed) and `trips.md` (human-readable mirror, **auto-generated** — never hand-edit it).
+- **Outside the plugin dir on purpose.** The plugin auto-updates (`claude plugin update` replaces its files), so anything stored inside the skill folder would be wiped. The registry survives updates and is shared by every agent and session.
+- **Single writer.** Only `scripts/trip_registry.py` writes these files (atomic writes, consistent schema). To read, just `cat` the JSON; to change anything, use the script.
+- **Per-trip fields:** `id`, `destination`, `dates`, `start`, `end`, `origin`, `route`, `pax`, `nights`, `flights`, `hotels`, `total`, `currency`, `status` (planned/booked/archived), `html_path`, `deploy_url`, `notes`, `data` (cached structured trip — see below), `created_at`, `updated_at`.
+- **Cached structure → update without re-scraping.** Recording from a JSON-SoT HTML (`--html`) also caches that trip's `trip-data` block under `data`. To change a date or swap a hotel later, you don't need the browser: either edit the `trip-data` block in the existing HTML (all views re-render from it), or regenerate the file from memory with `render`:
+
+```bash
+python3 "${CLAUDE_SKILL_DIR:-skills/trip-planner}/scripts/trip_registry.py" render --id turkey-2026-06 --out ~/Desktop/trip_turkey_2026-06.html
+```
+
+Other commands: `list` (human table or `--json`), `get --id <id>`, `remove --id <id>`, `render --id <id> [--out <path>]`, `status --id <id> --set planned|booked|archived`.
 
 ---
 
@@ -403,6 +490,7 @@ Non-obvious behaviors discovered through real usage. Read this list before scrap
 - **`chrome --headless --print-to-pdf` is the reliable PDF path.** The `window.print()` button in the HTML works for humans but doesn't work end-to-end via the MCP (`file://` URLs get mangled). Use `scripts/export_trip.py`. (KI-08)
 - **`browser_batch` is significantly faster** for predictable sequences (navigate → wait → JS-extract → screenshot). Batch them whenever the next 2+ steps are independent. The MCP nudges you toward batches; listen.
 - **Prefer ARK to JRO for Arusha-bound trips** — ARK is in town, JRO is ~50 km out. Bigger airport, but worse logistics for "land and sleep" use cases.
+- **Trip memory lives in `~/.trip-planner/`, outside the plugin dir.** It survives `claude plugin update` and is shared across agents/sessions. Never store it inside the skill folder, and never hand-edit `trips.md` (it's regenerated from `trips.json` on every write). Read it at Recall; write it at Step 9.
 
 ---
 
