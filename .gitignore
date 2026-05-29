@@ -1,0 +1,6 @@
+# Python
+__pycache__/
+*.pyc
+
+# Project memory — never commit (see CLAUDE.md global rule)
+context-map-*/
