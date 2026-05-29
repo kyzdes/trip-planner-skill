@@ -46,6 +46,10 @@
   .notes-list li { margin-bottom: 8px; font-size: 13px; line-height: 1.5; }
   .warn { color: #ff3b30; }
   .updated { font-size: 12px; color: #86868b; margin-top: 16px; text-align: center; }
+  .alts { margin-top: 6px; padding-top: 6px; border-top: 1px dashed #ececec; }
+  .alt { display: block; font-size: 12px; color: #86868b; line-height: 1.6; }
+  .alt b { color: #1d1d1f; font-weight: 600; }
+  .cur-select { padding: 9px 12px; border: 1px solid #d2d2d7; border-radius: 8px; font-size: 14px; background: #fff; color: #1d1d1f; cursor: pointer; margin-left: auto; }
   @media (max-width: 1000px) { body { padding: 16px; } table { font-size: 12px; } thead th, tbody td { padding: 8px 6px; } }
 </style>
 </head>
@@ -65,7 +69,10 @@
       <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
       Скачать PDF
     </button>
+    <span id="t-currency"><!-- currency select, only if meta.fx present --></span>
   </div>
+
+  <div id="t-variants"><!-- route variants, only if `variants` present --></div>
 
   <div class="card">
     <div class="card-header">Полный маршрут</div>
@@ -267,28 +274,67 @@ const BADGE = { flight: 'badge-flight', hotel: 'badge-hotel', transfer: 'badge-t
 function _nl(s) { return (s || '').replace(/\n/g, '<br>'); }
 function _ok(s) { return _nl(s).replace(/включён/g, '<span class="ok">включён</span>'); }
 
+function altsHtml(alts) {
+  // Per-leg alternatives (KYZ-211): muted sub-lines under the chosen flight.
+  if (!alts || !alts.length) return '';
+  const lines = alts.map(a => {
+    const bits = [a.time, a.price, a.note].filter(Boolean).join(' · ');
+    return `<span class="alt">↳ <b>${a.operator || ''}</b>${bits ? ' ' + bits : ''}</span>`;
+  }).join('');
+  return `<div class="alts">${lines}</div>`;
+}
+
 function tableRowsHtml(T) {
   return T.rows.map((r, i) => {
     const dateCell = r.date + (r.dateNote ? `<br><span class="note">${r.dateNote}</span>` : '');
     const descCell = `<strong>${r.title}</strong>` + (r.sub ? `<br>${r.sub}` : '');
     const timeCell = _nl(r.time) + (r.timeNote ? `<br><span class="note">${_nl(r.timeNote)}</span>` : '');
-    const detCell = (r.details || '') + (r.detailsNote ? `${r.details ? '<br>' : ''}<span class="note">${_ok(r.detailsNote)}</span>` : '');
+    const detCell = (r.details || '') + (r.detailsNote ? `${r.details ? '<br>' : ''}<span class="note">${_ok(r.detailsNote)}</span>` : '') + altsHtml(r.alternatives);
     const ratingCell = r.rating
       ? `<a class="ta-rating" href="${r.rating.taUrl}" target="_blank">${TA_SVG}${r.rating.ta}</a><br><span class="ta-reviews">${r.rating.taReviews}</span><br><span class="note">Ostrovok: ${r.rating.ostrovok}</span>`
       : '&mdash;';
     const priceCell = r.price || '&mdash;';
+    const priceAttr = r.priceNum != null ? ` data-rub="${r.priceNum}" data-orig="${priceCell}"` : '';
     const linksCell = (r.links || []).map(l => `<a class="link" href="${l.url}" target="_blank">${l.label}</a>`).join('<br>');
     const timeClass = r.type === 'hotel' ? '' : ' class="time-block"';
-    return `<tr class="type-${r.type}"><td>${i + 1}</td><td><span class="badge ${BADGE[r.type]}">${TYPE_NAME[r.type]}</span></td><td>${dateCell}</td><td>${descCell}</td><td${timeClass}>${timeCell}</td><td>${detCell}</td><td>${ratingCell}</td><td class="price">${priceCell}</td><td>${linksCell}</td></tr>`;
+    return `<tr class="type-${r.type}"><td>${i + 1}</td><td><span class="badge ${BADGE[r.type]}">${TYPE_NAME[r.type]}</span></td><td>${dateCell}</td><td>${descCell}</td><td${timeClass}>${timeCell}</td><td>${detCell}</td><td>${ratingCell}</td><td class="price"${priceAttr}>${priceCell}</td><td>${linksCell}</td></tr>`;
   }).join('\n');
 }
 
 function summaryHtml(T) {
-  return (T.summary || []).map(s => `<div class="summary-item"><div class="summary-value">${s.value}</div><div class="summary-label">${s.label}</div></div>`).join('');
+  return (T.summary || []).map(s => {
+    const attr = s.rub != null ? ` data-rub="${s.rub}" data-orig="${s.value}"` : '';
+    return `<div class="summary-item"><div class="summary-value"${attr}>${s.value}</div><div class="summary-label">${s.label}</div></div>`;
+  }).join('');
 }
 
 function notesHtml(T) {
   return (T.notes || []).map(n => `<li>${n}</li>`).join('');
+}
+
+function variantsHtml(T) {
+  // Whole-route variants (KYZ-212): stacked cards reusing the summary style.
+  if (!T.variants || !T.variants.length) return '';
+  const items = T.variants.map(v => {
+    const sub = [v.nights != null ? `${v.nights} ноч.` : '', v.note || ''].filter(Boolean).join(' · ');
+    return `<div class="summary-item"><div class="summary-value">${v.total || ''}</div><div class="summary-label"><strong>${v.label || ''}</strong>${sub ? '<br>' + sub : ''}</div></div>`;
+  }).join('');
+  return `<div class="card"><div class="card-header">Варианты маршрута</div><div class="summary-grid">${items}</div></div>`;
+}
+
+// Currency (KYZ-213): helpers render/convert only when meta.fx is present.
+const CUR_SYMBOL = { RUB: '₽', EUR: '€', USD: '$', GBP: '£' };
+function fxSymbol(c) { return CUR_SYMBOL[c] || c; }
+function fmtMoney(n, cur) {
+  const v = Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  return `${v} ${fxSymbol(cur)}`;
+}
+function convertMoney(rub, rate, cur) { return fmtMoney(rub * rate, cur); }
+function fxControlHtml(T) {
+  const fx = (T.meta && T.meta.fx) || null;
+  if (!fx || !Object.keys(fx).length) return '';
+  const opts = ['RUB', ...Object.keys(fx)].map(c => `<option value="${c}">${c}</option>`).join('');
+  return `<select class="cur-select" id="cur-select" title="Валюта">${opts}</select>`;
 }
 
 function xlsxAoa(T) {
@@ -352,7 +398,22 @@ const TRIP = JSON.parse(document.getElementById('trip-data').textContent);
   document.querySelector('#tripTable tbody').innerHTML = tableRowsHtml(TRIP);
   document.getElementById('t-summary').innerHTML = summaryHtml(TRIP);
   document.getElementById('t-notes').innerHTML = notesHtml(TRIP);
+  document.getElementById('t-variants').innerHTML = variantsHtml(TRIP);
+  const fxc = fxControlHtml(TRIP);
+  if (fxc) {
+    document.getElementById('t-currency').innerHTML = fxc;
+    document.getElementById('cur-select').addEventListener('change', e => applyCurrency(e.target.value));
+  }
 })();
+
+function applyCurrency(cur) {
+  const fx = (TRIP.meta && TRIP.meta.fx) || {};
+  const rate = cur === 'RUB' ? 1 : fx[cur];
+  document.querySelectorAll('[data-rub]').forEach(el => {
+    const rub = Number(el.getAttribute('data-rub'));
+    el.textContent = (cur === 'RUB') ? el.getAttribute('data-orig') : convertMoney(rub, rate, cur);
+  });
+}
 
 function downloadXLSX() {
   const wb = XLSX.utils.book_new();
