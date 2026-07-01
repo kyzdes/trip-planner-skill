@@ -25,7 +25,7 @@ Step 2  → Extract flight data (Aviasales, two-phase)
 Step 3  → Extract hotel data (Ostrovok, browser-only)
 Step 4  → Add transfers (see references/transfers.md)
 Step 5  → Run logistics checks
-Step 6  → Generate self-contained HTML (use assets/template.html)
+Step 6  → Generate self-contained HTML — itinerary + optional budget смета (assets/template.html)
 Step 6.5→ Optional: Python export (XLSX + PDF) via scripts/export_trip.py
 Step 7  → Present results to user
 Step 8  → Optional: deploy to Vercel
@@ -93,6 +93,16 @@ Examples: `MOW2706IST2`, `IST2906NAV2`, `MOW0309ZNZ2`, `DLM0607MOW2`.
 
 For round-trips Aviasales also accepts `{ORIGIN}{DDMM}{DESTINATION}{DDMM_BACK}{N_PAX}`, but for multi-city use separate one-way searches — it's simpler and the prices line up better.
 
+### Consider nearby gateways & direct charters (propose, don't assume)
+
+The cheapest, fastest way in isn't always the airport closest to the destination — and this can flip the whole plan, so it's worth a look **before** you lock the route:
+
+- **A neighbouring gateway** may have a direct (or far cheaper) flight the "obvious" airport doesn't. Real case: a Tanzania safari's obvious arrival is Kilimanjaro (JRO), but there's **no direct Moscow→JRO**, while **Moscow→Zanzibar (ZNZ) has a direct charter** (~10h vs 13–19h) and Arusha is a cheap ~1h20 hop from ZNZ — checking the neighbour saved ~65k ₽ and a connection.
+- **Direct charters from Russia** (Azur Air / Nordwind / Red Wings) to beach hubs often don't exist to the "logical" airport; a normal Aviasales search to the beach hub surfaces them.
+- The **"цены на соседние даты"** strip above the results shows ±1–3-day savings at a glance.
+
+So: **name the 1–2 plausible alternative gateways, tell the user, and if they're open to it run the extra searches and compare** — same present-options rule as elsewhere. Don't silently reroute.
+
 ### Ostrovok hotel search (when no link is given)
 
 If the user names a city without a URL, navigate to:
@@ -158,6 +168,17 @@ Two-letter airline codes (`WY` = Oman Air, `SU` = Aeroflot, `TK` = Turkish, `EK`
 
 Ostrovok is also an SPA. `WebFetch` returns only config JS — **never** use it. Browser only.
 
+### Which Ostrovok — corporate or public? (ask once)
+
+Ostrovok has two front doors, and the right one depends on the user (this skill gets shared — not everyone has the corporate portal):
+
+- **Public `ostrovok.ru`** — guest prices, no login, works for anyone.
+- **`corp.ostrovok.ru`** (the Komandirovki agent portal) — needs the user logged into an **agency account**; shows **agent/net rates in RUB**, is RU-card-friendly, and sometimes lists inventory the public site lacks. Agent rates are often cheaper — we've seen corp beat even the hotel's own official site.
+
+If it isn't already obvious (e.g. their browser is logged into corp), **ask once at the start of hotel work**: *"corporate Ostrovok (corp.ostrovok.ru, if you have an agency login) or the regular ostrovok.ru?"* Default to public if they don't have corp access.
+
+**Don't guess the region slug.** The same hotel can sit under an unexpected region — Riu Palace Swahili (Nungwi, Zanzibar) is filed under `kendwa`, not `nungwi`/`zanzibar`, so a constructed URL 404s. Reliable path: **type the hotel name into the site's search box / destination autocomplete and pick the suggestion** — you land on the exact page with the right region and `mid` in the URL. Use slug-construction only for a broad city search, and confirm via the page title.
+
 1. Navigate to the hotel URL.
 2. Wait until `document.title !== 'Загрузка отеля...'` — the page loads in two phases (shell first, then room data). 5–7 seconds is the safe wait. Scraping earlier gives zero rooms.
 3. Run the room price extractor (see below).
@@ -217,6 +238,7 @@ JSON shape (see the template for the full example):
 - `rows[].alternatives[]` — `{operator, time, price, note}` other flight options for that leg; rendered as muted sub-lines under the chosen flight (KYZ-211). Use when presenting 2-3 options for the user to pick (D-08).
 - top-level `variants[]` — `{label, total, nights, note}` whole-route options; rendered as stacked summary cards ("Вариант А / Б") (KYZ-212).
 - `meta.fx` — `{EUR: <eur_per_rub>, USD: …}` with **live** rates fetched at generation time; adds a currency toggle that recomputes prices from each `priceNum` / summary `rub` (KYZ-213). Omit if you don't have current rates.
+- top-level `budget` — an itemised trip budget (смета) rendered as a card after the summary: `{title, items[], total}`, each item `{label, sub?, value, rub?}`, plus one highlighted `total` row. Use it whenever a trip has cost lines the flights/hotels `totals` can't express — a tour/safari **operator package**, transfers, visa, insurance, tips. `rub` on a line makes it currency-convertible; omit `budget` and the output is unchanged. See **Budget block** below.
 
 Because the table is rendered client-side, the trip data also lives in this JSON for tooling: `trip_registry.py` and `export_trip.py` read the `trip-data` block directly (with a fallback to scraping older, pre-refactor outputs).
 
@@ -241,6 +263,10 @@ Or, when generating the HTML from Python, use `datetime.strptime(d, '%d.%m.%Y').
 ### Summary card
 
 Total, flights subtotal, hotels subtotal, trip duration, night count.
+
+### Budget block (смета — optional)
+
+When a trip is more than flights + hotels — a safari/tour **operator** quote, transfers, visa, insurance, tips — the 4-metric summary can't hold it, and the user usually wants a proper "смета" they can total up. Add a `budget` block (JSON shape above): itemised lines + one highlighted grand total, in the same card lexicon, right after the summary. Put a **range** in the total's `value` when numbers are still estimates (e.g. an operator hasn't re-quoted yet — `"≈ 1,03–1,10 млн ₽"`), and use each item's `sub` for the one-line breakdown or a caveat. It renders in the HTML and is appended to the XLSX; the price-free PDF omits it by design.
 
 ### Notes card
 

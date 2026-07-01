@@ -19,7 +19,7 @@ const html = fs.readFileSync(tpl, 'utf8');
 const T = JSON.parse(html.match(/<script id="trip-data" type="application\/json">([\s\S]*?)<\/script>/)[1]);
 const region = html.match(/\/\* === pure builders[\s\S]*?=== end pure builders === \*\//)[0];
 const B = {};
-eval(region + '\nObject.assign(B,{tableRowsHtml,summaryHtml,notesHtml,variantsHtml,fxControlHtml,convertMoney,fmtMoney,altsHtml,xlsxAoa,pdfBodyHtml});');
+eval(region + '\nObject.assign(B,{tableRowsHtml,summaryHtml,notesHtml,variantsHtml,budgetHtml,fxControlHtml,convertMoney,fmtMoney,altsHtml,xlsxAoa,pdfBodyHtml});');
 
 let failed = 0;
 const cnt = (s, re) => (s.match(re) || []).length;
@@ -36,6 +36,7 @@ const f = T.rows.filter(r => r.type === 'flight').reduce((a, r) => a + r.priceNu
 ok(f === T.totals.flights, 'baseline: priceNum sum == totals.flights (SoT consistent)');
 ok(!base.includes('class="alts"'), 'baseline: no alternatives rendered');
 ok(B.variantsHtml(T) === '', 'baseline: no variants card');
+ok(B.budgetHtml(T) === '', 'baseline: no budget card (no budget field)');
 ok(B.fxControlHtml(T) === '', 'baseline: no currency control (no meta.fx)');
 
 // ---- opt-in features (KYZ-211/212/213) ----
@@ -49,6 +50,12 @@ const S = {
   summary: [{ value: '~316 047 ₽', label: 'Итого', rub: 316047 }],
   variants: [{ label: 'Вариант А', total: '313 558 ₽', nights: 10, note: '18–28 июня' },
              { label: 'Вариант Б', total: '354 928 ₽', nights: 9 }],
+  budget: {
+    title: 'Смета', items: [
+      { label: 'Перелёты', value: '48 991 ₽', rub: 48991 },
+      { label: 'Виза', sub: '$50/чел', value: 'не включена' },
+    ], total: { label: 'ИТОГО', value: '~316 047 ₽', rub: 316047 },
+  },
   totals: {},
 };
 const sr = B.tableRowsHtml(S);
@@ -59,6 +66,9 @@ ok(cnt(vh, /summary-item/g) === 2 && vh.includes('Вариант А') && vh.incl
 const fc = B.fxControlHtml(S);
 ok(fc.includes('RUB') && fc.includes('EUR') && fc.includes('USD'), '213: currency select RUB+EUR+USD');
 ok(B.summaryHtml(S).includes('data-rub="316047"'), '213: summary value convertible');
+const bh = B.budgetHtml(S);
+ok(cnt(bh, /budget-row/g) === 3 && bh.includes('budget-total'), 'budget: 2 items + highlighted total');
+ok(bh.includes('data-rub="48991"') && bh.includes('$50/чел'), 'budget: line convertible + sub-label');
 ok(norm(B.convertMoney(48991, 0.0099, 'EUR')) === '485 €', '213: 48991 RUB -> 485 EUR');
 ok(norm(B.fmtMoney(316047, 'RUB')) === '316 047 ₽', '213: RUB thousands formatting');
 

@@ -50,6 +50,15 @@
   .alt { display: block; font-size: 12px; color: #86868b; line-height: 1.6; }
   .alt b { color: #1d1d1f; font-weight: 600; }
   .cur-select { padding: 9px 12px; border: 1px solid #d2d2d7; border-radius: 8px; font-size: 14px; background: #fff; color: #1d1d1f; cursor: pointer; margin-left: auto; }
+  .budget-list { padding: 8px 24px 16px; }
+  .budget-row { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding: 11px 0; border-bottom: 1px solid #f0f0f0; font-size: 14px; }
+  .budget-row:last-child { border-bottom: none; }
+  .budget-row .b-label { flex: 1; }
+  .budget-row .b-sub { display: block; font-size: 12px; color: #86868b; margin-top: 2px; }
+  .budget-row .b-value { font-weight: 700; white-space: nowrap; }
+  .budget-total { border-top: 2px solid #e5e5e5; margin-top: 4px; padding-top: 14px; }
+  .budget-total .b-label { font-size: 16px; font-weight: 700; }
+  .budget-total .b-value { font-size: 20px; color: #1a7f37; }
   @media (max-width: 1000px) { body { padding: 16px; } table { font-size: 12px; } thead th, tbody td { padding: 8px 6px; } }
 </style>
 </head>
@@ -101,6 +110,8 @@
     <div class="summary-grid" id="t-summary"><!-- rendered from trip-data --></div>
   </div>
 
+  <div id="t-budget"><!-- itemised budget, only if `budget` present --></div>
+
   <div class="card">
     <div class="card-header">Примечания</div>
     <ul class="notes-list" id="t-notes"><!-- rendered from trip-data --></ul>
@@ -148,7 +159,7 @@
       "rating": {"ta": "4.0", "taReviews": "132 отзыва", "taReviewsNum": 132, "ostrovok": "8.4/10", "taUrl": "https://www.tripadvisor.com/Hotel_Review-g293974-d12289910-Reviews-Adelmar_Hotel_Istanbul_Sisli-Istanbul.html"},
       "price": "13 992 &#8381;", "priceNum": 13992,
       "links": [
-        {"label": "ostrovok", "url": "https://corp.ostrovok.ru/hotel/turkey/istanbul/mid8668983/adelmar_hotel_istanbul/?q=1639&dates=20.06.2026-22.06.2026&guests=2&residency=en-ru&price=one&sid=REDACTED"},
+        {"label": "ostrovok", "url": "https://corp.ostrovok.ru/hotel/turkey/istanbul/mid8668983/adelmar_hotel_istanbul/?q=1639&dates=20.06.2026-22.06.2026&guests=2&residency=en-ru&price=one"},
         {"label": "tripadvisor", "url": "https://www.tripadvisor.com/Hotel_Review-g293974-d12289910-Reviews-Adelmar_Hotel_Istanbul_Sisli-Istanbul.html"}
       ],
       "x": {"date": "20—22.06 (2 ночи)", "route": "Sisli, Стамбул", "operator": "Adelmar Hotel Istanbul", "klass": "Std Dbl Room city view", "meal": "Завтрак", "cancel": "Невозвратный"},
@@ -183,7 +194,7 @@
       "rating": {"ta": "4.5", "taReviews": "1 348 отзывов", "taReviewsNum": 1348, "ostrovok": "9.2/10", "taUrl": "https://www.tripadvisor.com/Hotel_Review-g297983-d298393-Reviews-Cappadocia_Cave_Suites-Goreme_Cappadocia.html"},
       "price": "64 138 &#8381;", "priceNum": 64138,
       "links": [
-        {"label": "ostrovok", "url": "https://corp.ostrovok.ru/hotel/turkey/goreme/mid7475285/cappadocia_cave_suites/?q=602183&dates=22.06.2026-25.06.2026&guests=2&residency=en-ru&lc=22&page=1&price=one&sid=REDACTED"},
+        {"label": "ostrovok", "url": "https://corp.ostrovok.ru/hotel/turkey/goreme/mid7475285/cappadocia_cave_suites/?q=602183&dates=22.06.2026-25.06.2026&guests=2&residency=en-ru&lc=22&page=1&price=one"},
         {"label": "tripadvisor", "url": "https://www.tripadvisor.com/Hotel_Review-g297983-d298393-Reviews-Cappadocia_Cave_Suites-Goreme_Cappadocia.html"}
       ],
       "x": {"date": "22—25.06 (3 ночи)", "route": "Гёреме", "operator": "Cave Suites Adult Only +12", "klass": "Std Dbl Room (1 Queen), 20 м²", "meal": "Завтрак", "cancel": "Бесп. отмена до 06.06"},
@@ -218,7 +229,7 @@
       "rating": {"ta": "4.5", "taReviews": "5 814 отзывов", "taReviewsNum": 5814, "ostrovok": "9.4/10", "taUrl": "https://www.tripadvisor.com/Hotel_Review-g298031-d3337425-Reviews-Jiva_Beach_Resort-Fethiye_Mugla_Province_Turkish_Aegean_Coast.html"},
       "price": "84 162 &#8381;", "priceNum": 84162,
       "links": [
-        {"label": "ostrovok", "url": "https://corp.ostrovok.ru/hotel/turkey/fethiye/mid8580217/jiva_beach_resort/?q=4532&dates=25.06.2026-28.06.2026&guests=2&residency=en-ru&price=one&sid=REDACTED"},
+        {"label": "ostrovok", "url": "https://corp.ostrovok.ru/hotel/turkey/fethiye/mid8580217/jiva_beach_resort/?q=4532&dates=25.06.2026-28.06.2026&guests=2&residency=en-ru&price=one"},
         {"label": "tripadvisor", "url": "https://www.tripadvisor.com/Hotel_Review-g298031-d3337425-Reviews-Jiva_Beach_Resort-Fethiye_Mugla_Province_Turkish_Aegean_Coast.html"}
       ],
       "x": {"date": "25—28.06 (3 ночи)", "route": "Фетхие", "operator": "Jiva Beach Resort", "klass": "Room Pool View", "meal": "All Inclusive", "cancel": "Бесп. отмена до 23.06"},
@@ -322,6 +333,23 @@ function variantsHtml(T) {
   return `<div class="card"><div class="card-header">Варианты маршрута</div><div class="summary-grid">${items}</div></div>`;
 }
 
+function budgetHtml(T) {
+  // Optional itemised budget (смета): arbitrary cost lines + one highlighted total.
+  // Use when a trip has cost categories beyond flights+hotels — a tour/safari operator,
+  // transfers, visa, insurance, tips — that the flights/hotels `totals` can't express.
+  // Each item: {label, sub?, value, rub?}. `rub` makes the line currency-convertible.
+  const b = T.budget;
+  if (!b || !b.items || !b.items.length) return '';
+  const row = (it, cls) => {
+    const attr = it.rub != null ? ` data-rub="${it.rub}" data-orig="${it.value || ''}"` : '';
+    const sub = it.sub ? `<span class="b-sub">${it.sub}</span>` : '';
+    return `<div class="budget-row${cls || ''}"><div class="b-label">${it.label || ''}${sub}</div><div class="b-value"${attr}>${it.value || ''}</div></div>`;
+  };
+  const items = b.items.map(it => row(it)).join('');
+  const total = b.total ? row(b.total, ' budget-total') : '';
+  return `<div class="card"><div class="card-header">${b.title || 'Смета'}</div><div class="budget-list">${items}${total}</div></div>`;
+}
+
 // Currency (KYZ-213): helpers render/convert only when meta.fx is present.
 const CUR_SYMBOL = { RUB: '₽', EUR: '€', USD: '$', GBP: '£' };
 function fxSymbol(c) { return CUR_SYMBOL[c] || c; }
@@ -347,7 +375,14 @@ function xlsxAoa(T) {
   });
   const t = T.totals || {};
   const pad = (label, val) => ['', '', '', '', '', '', '', '', '', '', '', label, val, '', '', '', '', ''];
-  return [head, ...rows, [], pad('ИТОГО перелёты:', t.flights), pad('ИТОГО отели:', t.hotels), pad('ИТОГО:', t.total)];
+  const aoa = [head, ...rows, [], pad('ИТОГО перелёты:', t.flights), pad('ИТОГО отели:', t.hotels), pad('ИТОГО:', t.total)];
+  const b = T.budget;
+  if (b && b.items && b.items.length) {
+    aoa.push([], pad(b.title || 'СМЕТА', ''));
+    b.items.forEach(it => aoa.push(pad(plain(it.label || ''), plain(it.value || ''))));
+    if (b.total) aoa.push(pad(plain(b.total.label || 'ИТОГО'), plain(b.total.value || '')));
+  }
+  return aoa;
 }
 
 function pdfBodyHtml(T) {
@@ -399,6 +434,7 @@ const TRIP = JSON.parse(document.getElementById('trip-data').textContent);
   document.getElementById('t-summary').innerHTML = summaryHtml(TRIP);
   document.getElementById('t-notes').innerHTML = notesHtml(TRIP);
   document.getElementById('t-variants').innerHTML = variantsHtml(TRIP);
+  document.getElementById('t-budget').innerHTML = budgetHtml(TRIP);
   const fxc = fxControlHtml(TRIP);
   if (fxc) {
     document.getElementById('t-currency').innerHTML = fxc;
