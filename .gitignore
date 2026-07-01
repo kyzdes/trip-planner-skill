@@ -4,3 +4,4 @@ __pycache__/
 
 # Project memory — never commit (see CLAUDE.md global rule)
 context-map-*/
+context-map.md
